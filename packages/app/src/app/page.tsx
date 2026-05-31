@@ -23,7 +23,12 @@ export default async function Home({
     <main className="min-h-screen">
       <div className="max-w-2xl mx-auto px-4 py-16">
         <header className="mb-10">
-          <h1 className="text-4xl font-bold tracking-tight">Barkbound</h1>
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="text-4xl font-bold tracking-tight">Barkbound</h1>
+            <Link href="/trips" className="text-sm text-stone-500 hover:text-stone-700">
+              My trips
+            </Link>
+          </div>
           <p className="mt-2 text-stone-500">Build better adventures with your dogs.</p>
         </header>
 

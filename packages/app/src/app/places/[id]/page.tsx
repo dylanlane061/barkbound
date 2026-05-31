@@ -1,10 +1,10 @@
-import { db } from '@/db/client';
-import { places, rawRecords, signals } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { score } from '@barkbound/pawsignal';
 import type { Signal, SourceId } from '@barkbound/pawsignal';
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
+import { db } from '@/db/client';
+import { places, rawRecords, signals } from '@/db/schema';
 import ConfidenceBadge from '@/components/ConfidenceBadge';
 import SignalList from '@/components/SignalList';
 
@@ -12,9 +12,13 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
   const [place] = await db.select().from(places).where(eq(places.id, params.id));
   if (!place) notFound();
 
-  const [placeSignals, sources] = await Promise.all([
+  const [placeSignals, placeRawRecords, sources] = await Promise.all([
     db.select().from(signals).where(eq(signals.placeId, params.id)),
-    db.selectDistinct({ source: rawRecords.source }).from(rawRecords).where(eq(rawRecords.placeId, params.id)),
+    db.select().from(rawRecords).where(eq(rawRecords.placeId, params.id)),
+    db
+      .selectDistinct({ source: rawRecords.source })
+      .from(rawRecords)
+      .where(eq(rawRecords.placeId, params.id)),
   ]);
 
   const typedSignals: Signal[] = placeSignals.map((s) => ({
@@ -32,7 +36,10 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
   return (
     <main className="min-h-screen">
       <div className="max-w-2xl mx-auto px-4 py-16">
-        <Link href="/" className="text-sm text-stone-500 hover:text-stone-700 mb-8 inline-block">
+        <Link
+          href="/"
+          className="text-sm text-stone-500 hover:text-stone-700 mb-8 inline-block"
+        >
           ← Back to search
         </Link>
 
@@ -48,7 +55,7 @@ export default async function PlacePage({ params }: { params: { id: string } }) 
           <ConfidenceBadge confidence={assessment.confidence} />
         </div>
 
-        <SignalList signals={assessment.signals} />
+        <SignalList signals={assessment.signals} rawRecords={placeRawRecords} />
 
         {sources.length > 0 && (
           <p className="mt-8 text-xs text-stone-400">

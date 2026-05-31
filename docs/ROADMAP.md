@@ -65,22 +65,15 @@ meaningful.
 
 ## Phase 0 — Foundation
 
-- [ ] **Trips schema**: add `trips`, `trip_nodes`, and `trip_places` tables to
-      `packages/app/src/db/schema.ts`:
-      - `trips` — id, name, createdAt
-      - `trip_nodes` — id, tripId, label, latitude, longitude, radiusMiles, ingestedAt
-      - `trip_places` — id, tripId, placeId, addedAt, notes
-      Also add `last_ingested_at` to `places` for per-place staleness tracking.
-- [ ] Run `db:generate` to produce the initial migration; commit `packages/app/drizzle/`.
-- [ ] **Ingestion runner** — the missing glue: `fetch (source, bbox) → normalize → extract
-      → persist`. Lives in `packages/app/src/ingest/` (app side, since it touches the DB;
-      PawSignal stays DB-agnostic and pure). Triggered by trip node creation, not a cron.
-- [ ] **Ingestion status in the UI** — when a trip node triggers ingestion, show clear
-      progress messaging ("Finding places nearby...", "Checking PawSignal...", "Done").
-      The wait is fine; silence is not.
-- [ ] **Evidence display** — on the place page, make each signal expandable to show the
-      `raw_records` behind it (source, raw value, when fetched). This is Transparent
-      Scoring made literal. Currently `raw_records` is written but never surfaced.
+- [x] **Trips schema**: `trips`, `trip_nodes`, `trip_places` added to schema.
+      `last_ingested_at` added to `places`.
+- [ ] Run `db:generate` and `db:migrate` against a real database to apply the schema.
+- [x] **Ingestion runner** — `packages/app/src/ingest/runner.ts`. `registerAreaFetcher()`
+      is the hook for Phase 1 sources. `ingestArea()` is called by the nodes API route.
+- [x] **Ingestion status in the UI** — `NodeForm` shows "Finding location and checking
+      PawSignal... this may take a moment." while the request is in flight.
+- [x] **Evidence display** — `SignalList` now accepts `rawRecords` and uses
+      `<details>/<summary>` to show the raw source data behind each signal inline.
 
 ## Phase 1 — OpenStreetMap (first real source)
 
