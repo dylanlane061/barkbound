@@ -27,7 +27,8 @@ export function normalize(
 
   for (const raw of rawData) {
     try {
-      const entityId = String(raw['id'] ?? raw['_id'] ?? crypto.randomUUID());
+      const { randomUUID } = await import('node:crypto');
+      const entityId = String(raw['id'] ?? raw['_id'] ?? randomUUID());
       records.push(adapter(raw, entityId));
     } catch (err) {
       warnings.push(`Failed to normalize record: ${String(err)}`);
