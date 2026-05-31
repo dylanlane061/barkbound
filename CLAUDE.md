@@ -79,6 +79,12 @@ Three core tables in `packages/app/src/db/schema.ts`:
 
 The evidence chain is: `places ← signals ← raw_records`. A `PlaceAssessment` is computed at request time from the signals, not stored.
 
+## Roadmap
+
+`docs/ROADMAP.md` is the living plan for what to build next and in what order. Consult it
+before starting feature work. Current focus: getting one real data source flowing through
+PawSignal end-to-end (the pipeline is plumbed but no sources/extractors are registered yet).
+
 ## Key Distinction
 
 PawSignal is not a recommendation engine in the traditional sense. It evaluates the *quality and consistency of evidence* that a place is dog-friendly. The long-term asset is the **evidence graph** — not the UI layer.
