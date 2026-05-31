@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { db } from '@/db/client';
 import { places } from '@/db/schema';
 import { ilike, or } from 'drizzle-orm';
