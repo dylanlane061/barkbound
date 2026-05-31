@@ -80,17 +80,18 @@ meaningful.
 Best first source: free, no API key (Overpass API), and dog-friendliness is often
 **explicitly tagged**, so extraction is a near-trivial high-confidence mapping.
 
-- [ ] Overpass API client — query by bounding box.
-- [ ] `registerAdapter('osm', …)` — normalize Overpass elements into `RawRecord`s.
-- [ ] `registerExtractor('osm', …)` — map OSM tags to signals:
-  - `dog=yes|no|leashed|unleashed|leashed_only` → `pets_allowed` + `leash_required`
-  - `pets=yes|no` → `pets_allowed`
-  - `amenity=drinking_water` → `water_access`
-  - `highway=path` / `route=hiking` with dog tags → `trail_access`
-- [ ] Confidence policy for OSM: explicit tag = high (~0.85); inferred from element type
-      = lower (~0.5). Document the rationale inline so scores stay traceable.
-- [ ] Verify a real trip node near a well-tagged area (a city park, a trail) produces
-      non-zero, explainable scores on the place page.
+- [x] Overpass API client — `packages/app/src/ingest/sources/osm.ts`, queries by bbox
+      using `out center` so ways return a usable lat/lon.
+- [x] `registerExtractor('osm', osmExtractor)` — maps OSM tags to signals:
+  - `dog=yes|no|leashed|unleashed` → `pets_allowed` + `leash_required` (0.85)
+  - `pets=yes|no` (no `dog=` tag present) → `pets_allowed` (0.70, less specific)
+  - `leisure=dog_park` → `pets_allowed` + `designated_area` (0.90), inferred `leash_required=false` (0.60)
+  - `amenity=drinking_water` → `water_access` (0.85)
+  - `fee:dog` / `dog:fee` / `pet:fee` → `pet_fee` (0.80)
+- [x] Confidence rationale documented inline in `packages/pawsignal/src/extract/osm.ts`.
+- [ ] **Verify end-to-end**: run the app against a live DB, add a stop near a city with
+      good OSM coverage (Asheville NC, Portland OR, Denver CO), confirm places appear
+      with non-zero confidence and expandable signal evidence.
 
 ## Phase 2 — NPS & Recreation.gov
 

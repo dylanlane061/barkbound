@@ -65,10 +65,11 @@ These guide all decisions in the intelligence layer:
 ## PawSignal Extension Points
 
 To add a new data source:
-1. Register a **normalizer** in `packages/pawsignal/src/normalize/index.ts` via `registerAdapter(sourceId, fn)`
-2. Register an **extractor** in `packages/pawsignal/src/extract/index.ts` via `registerExtractor(sourceId, fn)`
+1. Create `packages/pawsignal/src/extract/<source>.ts` — a pure function that maps a `RawRecord` to `Signal[]`. Export it from `packages/pawsignal/src/index.ts`.
+2. Create `packages/app/src/ingest/sources/<source>.ts` — calls `registerExtractor(sourceId, fn)` (from `@barkbound/pawsignal`) and `registerAreaFetcher(fn)` (from `@/ingest/runner`). The area fetcher handles the HTTP call to the external API and returns `{ source, items: SourceItem[] }`.
+3. Import the new source file in `packages/app/src/ingest/sources/index.ts`.
 
-The extractor maps raw source data to typed `Signal` objects. The `score()` function in `packages/pawsignal/src/score/index.ts` aggregates signals into a `PlaceAssessment` automatically — no changes needed there for new sources.
+The `score()` function in `packages/pawsignal/src/score/index.ts` aggregates signals into a `PlaceAssessment` automatically — no changes needed there for new sources.
 
 ## Database Schema
 

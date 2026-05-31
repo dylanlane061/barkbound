@@ -1,3 +1,4 @@
+import '@/ingest/sources'; // registers all area fetchers and extractors
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';

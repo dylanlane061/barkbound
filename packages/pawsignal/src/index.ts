@@ -11,4 +11,5 @@ export type {
 
 export { normalize, registerAdapter } from './normalize/index.js';
 export { extract, registerExtractor } from './extract/index.js';
+export { osmExtractor } from './extract/osm.js';
 export { score } from './score/index.js';
