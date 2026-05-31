@@ -14,111 +14,139 @@ The skeleton is complete but **no real data flows through it yet**:
 - The DB schema exists but **no migrations have been generated** (`packages/app/drizzle/` is empty).
 - `seed.ts` inserts **bare places only** — no `raw_records`, no `signals`.
 - The UI correctly renders the empty state ("No signals collected yet").
+- There is no trips schema yet — and trips are the trigger for ingestion.
 
-Translation: we built the pipes. Nothing is in them. The first job is to push one real
-source end-to-end so a place shows a non-zero, *explainable* score.
+Translation: we built the pipes. Nothing is in them. The first job is to land the trips
+schema and the ingestion runner so one real source can flow end-to-end.
+
+## How ingestion works
+
+**Trip nodes are the ingestion unit.** When a user adds a node to a trip (a waypoint with
+a radius — e.g. "Asheville, 25 miles"), that is the event that triggers fetching from
+external sources for that area.
+
+```
+User adds trip node (lat/long + radius)
+  → query DB for cached places in bbox  → return immediately (may be empty)
+  → kick off area ingestion in background
+      fetch bbox from OSM / NPS / etc.
+      normalize → extract → persist (deduped by source + sourceEntityId)
+  → UI polls or user refreshes to see results as they land
+```
+
+The wait is acceptable. What matters is that the UI explains clearly what is happening:
+"Finding places nearby...", "Checking PawSignal...", "Done — 12 places found." Users
+should never see a blank screen with no explanation.
+
+**Staleness**: `trip_nodes` tracks `ingestedAt`. If null or older than 30 days, re-fetch
+that area. Per-place deduplication via `(source, sourceEntityId)` on `raw_records` means
+overlapping nodes (two trips both near Asheville) don't double-process the same place.
+
+**This is not a cron job.** There is no background scheduled refresh. Ingestion only
+happens when a user creates or refreshes a trip node. The DB grows from real trip
+activity, not pre-population.
 
 ## Guiding sequence
 
 ```
-Phase 0  Make data real          → migrations + ingestion plumbing + evidence display
-Phase 1  First source: OSM       → structured dog tags, no API key, high confidence
-Phase 2  Parks & camps: NPS + Rec.gov → free-text extraction, real coverage
-Phase 3  Product features        → saved candidates, export, filtering
-Phase 4  Hard sources + trust    → official sites, user imports, verification loop
+Phase 0  Foundation        → trips schema + migrations + ingestion runner + evidence display
+Phase 1  OSM               → first real source, structured dog tags, no API key
+Phase 2  NPS + Rec.gov     → parks/campgrounds, free-text extraction
+Phase 3  Product surfaces  → trip management UI, filtering, export
+Phase 4  Hard sources      → official sites, user imports, verification loop
 ```
 
-Rationale: a feature like "export to Roadtrippers" is worthless until there's real
-evidence worth exporting. Data first, then the product surfaces that show it off.
+Rationale: the trip schema and ingestion runner are now foundational — they gate
+everything else. OSM unlocks real scores. NPS/Rec.gov covers the actual use case
+(national parks, campgrounds). Product surfaces are only worth building once scores are
+meaningful.
 
 ---
 
-## Phase 0 — Make data real (foundation)
+## Phase 0 — Foundation
 
-Nothing downstream matters until one source reaches the screen.
-
+- [ ] **Trips schema**: add `trips`, `trip_nodes`, and `trip_places` tables to
+      `packages/app/src/db/schema.ts`:
+      - `trips` — id, name, createdAt
+      - `trip_nodes` — id, tripId, label, latitude, longitude, radiusMiles, ingestedAt
+      - `trip_places` — id, tripId, placeId, addedAt, notes
+      Also add `last_ingested_at` to `places` for per-place staleness tracking.
 - [ ] Run `db:generate` to produce the initial migration; commit `packages/app/drizzle/`.
-- [ ] Build an **ingestion runner** — the missing glue that ties the pipeline together:
-      `fetch (source) → normalize → extract → persist (places, raw_records, signals)`.
-      Lives in `packages/app/src/ingest/` (app side, since it touches the DB; PawSignal
-      stays DB-agnostic and pure).
-- [ ] Decide where ingestion runs (see Open Decisions). Start with a **manual CLI script**
-      (`npm run ingest`) — simplest thing that proves the loop.
-- [ ] **Evidence display**: on the place page, make each signal expandable to show the
-      `raw_records` behind it (the source, the raw value, when fetched). This is the
-      "Transparent Scoring" principle made literal — arguably the most important UI in the
-      whole product. Right now `raw_records` is written but never surfaced.
-- [ ] Replace the bare-places seed with a small set of **real ingested places** so the app
-      demos with genuine evidence, not placeholders.
+- [ ] **Ingestion runner** — the missing glue: `fetch (source, bbox) → normalize → extract
+      → persist`. Lives in `packages/app/src/ingest/` (app side, since it touches the DB;
+      PawSignal stays DB-agnostic and pure). Triggered by trip node creation, not a cron.
+- [ ] **Ingestion status in the UI** — when a trip node triggers ingestion, show clear
+      progress messaging ("Finding places nearby...", "Checking PawSignal...", "Done").
+      The wait is fine; silence is not.
+- [ ] **Evidence display** — on the place page, make each signal expandable to show the
+      `raw_records` behind it (source, raw value, when fetched). This is Transparent
+      Scoring made literal. Currently `raw_records` is written but never surfaced.
 
 ## Phase 1 — OpenStreetMap (first real source)
 
 Best first source: free, no API key (Overpass API), and dog-friendliness is often
-**explicitly tagged**, so extraction is a near-trivial mapping with high confidence.
+**explicitly tagged**, so extraction is a near-trivial high-confidence mapping.
 
-- [ ] Overpass API client (query by bounding box / area).
+- [ ] Overpass API client — query by bounding box.
 - [ ] `registerAdapter('osm', …)` — normalize Overpass elements into `RawRecord`s.
 - [ ] `registerExtractor('osm', …)` — map OSM tags to signals:
   - `dog=yes|no|leashed|unleashed|leashed_only` → `pets_allowed` + `leash_required`
   - `pets=yes|no` → `pets_allowed`
-  - presence of `amenity=drinking_water` nearby → `water_access`
+  - `amenity=drinking_water` → `water_access`
   - `highway=path` / `route=hiking` with dog tags → `trail_access`
-- [ ] Confidence policy for OSM: explicit tag = high (~0.85); inferred = lower. Document
-      the rationale inline so scores stay traceable.
+- [ ] Confidence policy for OSM: explicit tag = high (~0.85); inferred from element type
+      = lower (~0.5). Document the rationale inline so scores stay traceable.
+- [ ] Verify a real trip node near a well-tagged area (a city park, a trail) produces
+      non-zero, explainable scores on the place page.
 
 ## Phase 2 — NPS & Recreation.gov
 
-Moves us from "tagged points" to the parks/campgrounds that are the actual use case.
-Both require a **free API key** and both bury pet policy in **free text**, so this is
-where we build real extraction (keyword rules first; revisit LLM extraction only if
-rules prove too brittle).
+Moves from tagged points to the parks and campgrounds that are the actual use case.
+Both require a **free API key** and bury pet policy in **free text** — this is where
+real extraction gets built (keyword/regex rules first; revisit LLM extraction only if
+rules prove too brittle, since LLM output conflicts with Transparent Scoring).
 
-- [ ] **NPS API** (developer.nps.gov, free key). Parks + their "Pets" articles /
-      `thingstodo`. Pet policy is usually unstructured prose → extractor scans for leash
-      rules, B.A.R.K. ranger language, trail/building restrictions.
-- [ ] **Recreation.gov RIDB** (free key). Facility attributes sometimes include "Pets
-      Allowed"; otherwise it's in the description text. Mixed structured + free-text extractor.
-- [ ] **Cross-source corroboration check**: when OSM and NPS agree on a place, `score()`'s
-      multi-source boost should kick in. Verify this produces sensible aggregate confidence
-      and that the evidence view shows both sources side by side.
+- [ ] **NPS API** (developer.nps.gov, free key) — parks + "Pets" policy articles.
+      Extractor scans for leash rules, trail/building restrictions, B.A.R.K. language.
+- [ ] **Recreation.gov RIDB** (free key) — facility attributes + description text.
+      Mixed structured + free-text extractor.
+- [ ] **Cross-source corroboration** — when OSM and NPS agree on a place, `score()`'s
+      multi-source boost should kick in. Verify the evidence view shows both sources side
+      by side and the aggregate confidence makes intuitive sense.
 
-## Phase 3 — Product features (surface the evidence)
+## Phase 3 — Product surfaces
 
-With real scores, build the surfaces that make Barkbound a *research* tool.
+With real scores from multiple sources, build the UI that makes Barkbound a research tool.
 
-- [ ] **Saved candidates / scouting list** — let a user collect places they're evaluating.
-      New table; the core "research before you commit" loop.
-- [ ] **Export** to external planners (Roadtrippers, Google Maps) — the explicit hand-off
-      in the product vision. Likely Google Maps URL / GPX / CSV to start.
-- [ ] **Filtering & sorting** — by signal (e.g. "off-leash allowed"), by confidence
-      threshold, by distance.
-- [ ] **Geographic search** — lat/long radius using the coords already in the `places`
-      schema (currently unused by the search route).
+- [ ] **Trip management UI** — create/name trips, add/remove nodes with radius, view the
+      places discovered per node. This is the core loop.
+- [ ] **Filtering & sorting** — by signal category (off-leash allowed, water access, etc.),
+      by confidence threshold, by distance from node.
+- [ ] **Export** — hand off to external planners (Google Maps URL, GPX, CSV). This is the
+      explicit product hand-off in the vision; only worth building once scores are trustworthy.
 
-## Phase 4 — Harder sources & the trust loop
+## Phase 4 — Hard sources & the trust loop
 
-- [ ] **Official websites** — HTML scrape + extraction. Fragile and per-site; lower base
+- [ ] **Official websites** — per-site HTML scrape + extraction. Fragile; lower base
       confidence. Defer until the rules-based extractors are mature enough to reuse.
-- [ ] **User imports** — CSV / manual entry. Treat user-asserted facts as a distinct
-      evidence class (confidence depends on verification, not source authority).
-- [ ] **Verification loop** — let users confirm/dispute a signal. Per the vision, "every
-      user verification strengthens PawSignal." This is what compounds the evidence graph
-      over time; design the schema for it before we have lots of data to migrate.
+- [ ] **User imports** — CSV / manual entry. Treat as a distinct evidence class with
+      confidence that depends on subsequent verification, not source authority.
+- [ ] **Verification loop** — let users confirm/dispute a signal. Every verification
+      strengthens PawSignal. Design the schema for this before there is too much data to
+      migrate — a `signal_verifications` table (userId, signalId, verdict, createdAt).
 
 ---
 
 ## Open decisions (resolve as we go)
 
-1. **Where does ingestion run on Vercel?** Vercel has no long-running workers. Options:
-   (a) manual CLI now → Vercel Cron later for scheduled refresh; (b) on-demand fetch at
-   search time with caching. Recommendation: start with (a), it's the least magic.
-2. **Extraction approach for free text** — start with keyword/regex rules (cheap, fully
-   transparent, no API cost). Only reach for LLM extraction if rules visibly fail, since
-   LLM output is harder to make traceable (conflicts with Transparent Scoring).
-3. **Are assessments computed on-read or cached?** Currently computed per request in
+1. **Ingestion on Vercel** — Vercel has no long-running workers. For now: ingestion runs
+   in an API route handler (Next.js route handlers can run up to 5 minutes on Pro). When
+   that becomes a constraint, move to Vercel Cron + a queue. Do not over-engineer this yet.
+2. **Extraction approach for free text** — keyword/regex rules first. Only reach for LLM
+   extraction if rules visibly fail, since LLM output is harder to make traceable.
+3. **Assessments computed on-read or cached?** — currently computed per request in
    `score()`. Fine at small scale; revisit if it gets slow.
-4. **API keys** — NPS and Rec.gov both need free keys. Add to `.env.example` when we
-   reach Phase 2.
+4. **API keys** — NPS and Rec.gov need free keys. Add to `.env.example` in Phase 2.
 
 ## Principles check (don't drift from these)
 
