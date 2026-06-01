@@ -1,4 +1,23 @@
+# dependencies
 node_modules/
+
+# build output
 dist/
+.next/
+out/
+
+# typescript / next generated
+*.tsbuildinfo
+next-env.d.ts
+
+# env files (keep .env.example tracked)
 .env
+.env*.local
 *.local
+
+# logs
+*.log
+npm-debug.log*
+
+# os
+.DS_Store

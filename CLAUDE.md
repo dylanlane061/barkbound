@@ -8,16 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Two-Layer Architecture
 
-### Barkbound (Product Layer) — `packages/app`
+### Barkbound (Product Layer) — `src/`
 Next.js 14 application (App Router). Responsible for discovery, scouting reports, candidate evaluation, and trip research. Deployed to Vercel.
 
-### PawSignal (Intelligence Layer) — `packages/pawsignal`
-Pure TypeScript library with no framework dependencies. Consumed by the Next.js app via npm workspaces (`@barkbound/pawsignal`). Responsible for:
+### PawSignal (Intelligence Layer) — `pawsignal/`
+Pure TypeScript module with no framework dependencies. Imported via the `@pawsignal` path alias. Responsible for:
 - Normalizing raw data across heterogeneous sources
 - Extracting dog-relevant signals (pet policies, size restrictions, leash rules, amenities)
 - Producing transparent confidence scores with visible evidence chains
-
-`transpilePackages: ['@barkbound/pawsignal']` in `next.config.ts` lets Next.js compile PawSignal's TypeScript source directly — no separate build step needed during development.
 
 **Every recommendation in Barkbound is powered by PawSignal.**
 
@@ -33,20 +31,20 @@ Data Sources → PawSignal (normalize → extract → score) → Next.js API rou
 - **Language**: TypeScript throughout
 - **Database**: PostgreSQL via Drizzle ORM + `postgres` driver
 - **Styling**: Tailwind CSS
-- **Deployment**: Vercel (set Root Directory to `packages/app` in project settings)
+- **Deployment**: Vercel (no Root Directory setting needed — repo root is the Next.js app)
 
 ## Commands
 
-All commands run from the repo root unless noted.
+All commands run from the repo root.
 
 ```bash
 npm run dev          # Start Next.js dev server (port 3000)
 npm run build        # Production build
-npm run typecheck    # Type-check all packages
-npm run lint         # Lint all packages
+npm run typecheck    # Type-check the project
+npm run lint         # Lint the project
 ```
 
-Database (run from `packages/app`):
+Database:
 ```bash
 npm run db:generate  # Generate Drizzle migrations from schema changes
 npm run db:migrate   # Apply migrations to the database
@@ -65,15 +63,15 @@ These guide all decisions in the intelligence layer:
 ## PawSignal Extension Points
 
 To add a new data source:
-1. Create `packages/pawsignal/src/extract/<source>.ts` — a pure function that maps a `RawRecord` to `Signal[]`. Export it from `packages/pawsignal/src/index.ts`.
-2. Create `packages/app/src/ingest/sources/<source>.ts` — calls `registerExtractor(sourceId, fn)` (from `@barkbound/pawsignal`) and `registerAreaFetcher(fn)` (from `@/ingest/runner`). The area fetcher handles the HTTP call to the external API and returns `{ source, items: SourceItem[] }`.
-3. Import the new source file in `packages/app/src/ingest/sources/index.ts`.
+1. Create `pawsignal/extract/<source>.ts` — a pure function that maps a `RawRecord` to `Signal[]`. Export it from `pawsignal/index.ts`.
+2. Create `src/ingest/sources/<source>.ts` — calls `registerExtractor(sourceId, fn)` (from `@pawsignal`) and `registerAreaFetcher(fn)` (from `@/ingest/runner`). The area fetcher handles the HTTP call to the external API and returns `{ source, items: SourceItem[] }`.
+3. Import the new source file in `src/ingest/sources/index.ts`.
 
-The `score()` function in `packages/pawsignal/src/score/index.ts` aggregates signals into a `PlaceAssessment` automatically — no changes needed there for new sources.
+The `score()` function in `pawsignal/score/index.ts` aggregates signals into a `PlaceAssessment` automatically — no changes needed there for new sources.
 
 ## Database Schema
 
-Three core tables in `packages/app/src/db/schema.ts`:
+Three core tables in `src/db/schema.ts`:
 - `places` — the canonical place entity
 - `raw_records` — raw data fetched from external sources, keyed by `(source, sourceEntityId)`
 - `signals` — normalized dog-relevant signals extracted from raw records, linked to a place
