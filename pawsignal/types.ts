@@ -1,4 +1,4 @@
-export type SourceId = 'osm' | 'recreation_gov' | 'nps' | 'user_import';
+export type SourceId = 'google' | 'osm' | 'recreation_gov' | 'nps' | 'user_import';
 
 export type SignalCategory =
   | 'pets_allowed'

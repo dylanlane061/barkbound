@@ -8,6 +8,14 @@ export const places = pgTable('places', {
   state: text('state'),
   latitude: real('latitude'),
   longitude: real('longitude'),
+  // Canonical identity from the resolution backbone (Phase 1.5). `externalId` is the
+  // Google place_id; it is the durable key we dedupe on and re-fetch by.
+  canonicalSource: text('canonical_source'),
+  externalId: text('external_id').unique(),
+  // When evidence was last collected for this place (the on-demand assessment).
+  // NULL = never assessed (distinct from "assessed, found little"). Drives the
+  // 30-day refresh prompt.
+  assessedAt: timestamp('assessed_at'),
   lastIngestedAt: timestamp('last_ingested_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

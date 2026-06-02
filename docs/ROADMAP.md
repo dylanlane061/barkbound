@@ -19,41 +19,53 @@ The skeleton is complete but **no real data flows through it yet**:
 Translation: we built the pipes. Nothing is in them. The first job is to land the trips
 schema and the ingestion runner so one real source can flow end-to-end.
 
-## How ingestion works
+## How ingestion works (revised in Phase 1.5 — on-demand, per place)
 
-**Trip nodes are the ingestion unit.** When a user adds a node to a trip (a waypoint with
-a radius — e.g. "Asheville, 25 miles"), that is the event that triggers fetching from
-external sources for that area.
+Ingestion is now **two phases split in time**, anchored on Google Places as the
+canonical catalog:
+
+**1. Catalog (cheap, eager).** Searching within a radius (a trip node) calls Google
+Nearby Search with the user's type tags (restaurants, lodging, parks, breweries…).
+Results are upserted as canonical places keyed by Google `place_id`. No evidence and
+no score yet — just a fast, browsable list.
+
+**2. Assess (expensive, on demand).** On a place with no score, the user *requests* an
+assessment. Only then do we run the full collection for that ONE place: each
+enrichment source (OSM today; NPS/Rec.gov later) is queried near the place, conflated
+to it by name + geo + category, extracted into signals, and stored. `places.assessed_at`
+is set; the score is computed on read from the stored signals.
 
 ```
-User adds trip node (lat/long + radius)
-  → query DB for cached places in bbox  → return immediately (may be empty)
-  → kick off area ingestion in background
-      fetch bbox from OSM / NPS / etc.
-      normalize → extract → persist (deduped by source + sourceEntityId)
-  → UI polls or user refreshes to see results as they land
+User searches radius + tags
+  → Google Nearby → upsert canonical places (place_id)     [fast, no score]
+User opens a place, clicks "Request assessment"
+  → for each enrichment source: find candidate near place → conflate → extract
+  → store raw_records + signals, set assessed_at
+  → score() on read from stored signals
+After 30 days → place shows "Refresh" → re-run collection, bump assessed_at
 ```
 
-The wait is acceptable. What matters is that the UI explains clearly what is happening:
-"Finding places nearby...", "Checking PawSignal...", "Done — 12 places found." Users
-should never see a blank screen with no explanation.
+**Why on-demand:** scoring every place in a radius wastes API calls and conflation
+effort on places the user never opens. Per-place assessment is also small enough to run
+synchronously in the request — no background worker or queue needed on Vercel.
 
-**Staleness**: `trip_nodes` tracks `ingestedAt`. If null or older than 30 days, re-fetch
-that area. Per-place deduplication via `(source, sourceEntityId)` on `raw_records` means
-overlapping nodes (two trips both near Asheville) don't double-process the same place.
+**Unassessed vs. empty:** `assessed_at IS NULL` means "never assessed" (show "Request
+assessment"); a non-null timestamp with a low score means "we looked across all sources
+and found little" — an honest, different statement.
 
-**This is not a cron job.** There is no background scheduled refresh. Ingestion only
-happens when a user creates or refreshes a trip node. The DB grows from real trip
-activity, not pre-population.
+**Dedup & staleness:** raw_records remain keyed by `(source, source_entity_id)`, so
+refreshes upsert rather than duplicate. `assessed_at` (per place) drives the 30-day
+refresh; `trip_nodes.ingested_at` now marks when an area was last *catalogued*.
 
 ## Guiding sequence
 
 ```
-Phase 0  Foundation        → trips schema + migrations + ingestion runner + evidence display
-Phase 1  OSM               → first real source, structured dog tags, no API key
-Phase 2  NPS + Rec.gov     → parks/campgrounds, free-text extraction
-Phase 3  Product surfaces  → trip management UI, filtering, export
-Phase 4  Hard sources      → official sites, user imports, verification loop
+Phase 0   Foundation        → trips schema + migrations + ingestion runner + evidence display
+Phase 1   OSM               → first real source, structured dog tags, no API key
+Phase 1.5 Google backbone   → canonical catalog + autocomplete + on-demand per-place assessment
+Phase 2   NPS + Rec.gov     → parks/campgrounds, free-text extraction
+Phase 3   Product surfaces  → trip management UI, filtering, export
+Phase 4   Hard sources      → official sites, user imports, verification loop
 ```
 
 Rationale: the trip schema and ingestion runner are now foundational — they gate
@@ -92,6 +104,54 @@ Best first source: free, no API key (Overpass API), and dog-friendliness is ofte
 - [ ] **Verify end-to-end**: run the app against a live DB, add a stop near a city with
       good OSM coverage (Asheville NC, Portland OR, Denver CO), confirm places appear
       with non-zero confidence and expandable signal evidence.
+
+## Phase 1.5 — Google Places backbone + on-demand assessment
+
+OSM is a good *enrichment* source but a poor *catalog* (sparse businesses, thin
+dog-policy density). Google Places becomes the canonical catalog/identity spine, and
+PawSignal's job sharpens to "build defensible confidence about places Google
+catalogued." Scoring shifts to user-initiated, per place (see "How ingestion works",
+revised above). PawSignal's `extract()`/`score()` are unchanged — this is an
+orchestration + persistence shift in the app layer.
+
+Compliance shapes the design: store Google `place_id` durably; treat Google display
+fields as a refreshable cache; do NOT persist Google attributes as permanent evidence.
+**Google = spine + a live read-time signal; OSM/NPS/etc = stored evidence.** Every call
+uses a FieldMask (Places API New requires it; it also controls cost) and autocomplete
+uses session tokens. "Anchor" is a *role* — Google fills it now, but the engine never
+*requires* Google (preserves Source Agnostic).
+
+### 1.5a — Schema + Google client
+- [ ] `places`: add `external_id` (unique — the Google place_id), `canonical_source`,
+      `assessed_at`. Generate + apply migration.
+- [ ] `SourceId` gains `'google'` in PawSignal types.
+- [ ] Google client (`src/ingest/google.ts`): `autocomplete()`, `searchNearby()`,
+      `getPlaceDetails()` — typed, FieldMasked, reads `GOOGLE_MAPS_API_KEY`.
+
+### 1.5b — Catalog (search → fast, scoreless list)
+- [ ] `/api/search/autocomplete` → typeahead in the search box (cities + places).
+- [ ] Nearby Search with user type tags (restaurants, lodging, parks, breweries…) →
+      upsert canonical places by `external_id`. No scores yet.
+- [ ] Define the Google `includedTypes` allowlist (fixes the fountains/no-restaurants
+      problem at the source).
+
+### 1.5c — On-demand assessment (per place)
+- [ ] Enrichment sources implement `findEvidence(place)` (per-place — replaces the bbox
+      area fetch). Conflate one known place by name + geo + category.
+- [ ] `POST /api/places/[id]/assess` runs enrichment → conflate → extract → store
+      signals/raw_records → set `assessed_at`. Runs synchronously (one place is small).
+- [ ] Place detail "Request assessment" button; recompute score on read from signals.
+
+### 1.5d — Staleness + live Google signal
+- [ ] Show "assessed N days ago" and a "Refresh" action past 30 days (re-collect, bump
+      `assessed_at`).
+- [ ] Optional: fetch Google `allowsDogs` live at read time as an additional signal,
+      clearly marked as live (not a stored raw_record).
+
+**Known gap (deliberate defer):** Google's type coverage is weak for trails and dog
+parks — central to dog travel, and where OSM is actually stronger. For now accept a
+commercial-POI-heavy catalog; revisit letting OSM contribute trail/park *catalog*
+entries (not just enrichment) once the Google path is proven.
 
 ## Phase 2 — NPS & Recreation.gov
 
@@ -133,14 +193,18 @@ With real scores from multiple sources, build the UI that makes Barkbound a rese
 
 ## Open decisions (resolve as we go)
 
-1. **Ingestion on Vercel** — Vercel has no long-running workers. For now: ingestion runs
-   in an API route handler (Next.js route handlers can run up to 5 minutes on Pro). When
-   that becomes a constraint, move to Vercel Cron + a queue. Do not over-engineer this yet.
+1. **Ingestion on Vercel** — Largely resolved by Phase 1.5's on-demand model: assessing
+   one place at a time is small enough to run synchronously in an API route handler, so no
+   background worker or queue is needed yet. The area catalog (Google Nearby) is a single
+   fast call. Revisit only if batch / refresh-all features arrive.
 2. **Extraction approach for free text** — keyword/regex rules first. Only reach for LLM
    extraction if rules visibly fail, since LLM output is harder to make traceable.
-3. **Assessments computed on-read or cached?** — currently computed per request in
-   `score()`. Fine at small scale; revisit if it gets slow.
-4. **API keys** — NPS and Rec.gov need free keys. Add to `.env.example` in Phase 2.
+3. **Assessments computed on-read or cached?** — Settled in Phase 1.5: store the
+   expensive part (evidence — raw_records + signals) when an assessment is requested, and
+   recompute the cheap `score()` on read from stored signals. Tuning weights re-scores
+   without re-collecting. `assessed_at` marks when collection last ran.
+4. **API keys** — Google Places (`GOOGLE_MAPS_API_KEY`) in Phase 1.5; NPS and Rec.gov in
+   Phase 2. Add to `.env.example` as each is introduced.
 
 ## Principles check (don't drift from these)
 
