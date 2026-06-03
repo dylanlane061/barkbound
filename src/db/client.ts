@@ -1,19 +1,12 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 
-// Connection pool size.
-//   - On Vercel's serverless runtime each instance is short-lived, so we keep it
-//     small to avoid exhausting connections across many concurrent lambdas.
-//   - Locally (and anywhere non-serverless) a larger pool lets parallel queries
-//     (Promise.all) actually run concurrently instead of serializing over one
-//     connection — the main cause of stacked round-trips to a remote DB.
-// Override explicitly with DB_POOL_MAX if needed.
-const poolMax = process.env.DB_POOL_MAX
-  ? Number(process.env.DB_POOL_MAX)
-  : process.env.VERCEL
-    ? 1
-    : 10;
+// Local SQLite database. File is created automatically on first run.
+// No connection pooling needed — SQLite is in-process and synchronous.
+const sqlite = new Database('./local.db');
 
-const client = postgres(process.env.DATABASE_URL!, { max: poolMax });
-export const db = drizzle(client, { schema });
+// SQLite disables foreign key enforcement by default; turn it on.
+sqlite.pragma('foreign_keys = ON');
+
+export const db = drizzle(sqlite, { schema });

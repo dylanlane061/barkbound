@@ -1,7 +1,7 @@
-import { pgTable, uuid, text, real, jsonb, timestamp } from 'drizzle-orm/pg-core';
+import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
 
-export const places = pgTable('places', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const places = sqliteTable('places', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text('name').notNull(),
   address: text('address'),
   city: text('city'),
@@ -15,51 +15,76 @@ export const places = pgTable('places', {
   // When evidence was last collected for this place (the on-demand assessment).
   // NULL = never assessed (distinct from "assessed, found little"). Drives the
   // 30-day refresh prompt.
-  assessedAt: timestamp('assessed_at'),
-  lastIngestedAt: timestamp('last_ingested_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  assessedAt: integer('assessed_at', { mode: 'timestamp' }),
+  lastIngestedAt: integer('last_ingested_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 
-export const rawRecords = pgTable('raw_records', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  placeId: uuid('place_id').references(() => places.id).notNull(),
+export const rawRecords = sqliteTable('raw_records', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  placeId: text('place_id')
+    .references(() => places.id)
+    .notNull(),
   source: text('source').notNull(),
   sourceEntityId: text('source_entity_id').notNull(),
-  raw: jsonb('raw').notNull(),
-  fetchedAt: timestamp('fetched_at').notNull(),
+  // SQLite has no native JSON type; Drizzle's { mode: 'json' } stores as TEXT
+  // and auto-serialises/deserialises on read/write.
+  raw: text('raw', { mode: 'json' }).notNull(),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp' }).notNull(),
 });
 
-export const signals = pgTable('signals', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  placeId: uuid('place_id').references(() => places.id).notNull(),
+export const signals = sqliteTable('signals', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  placeId: text('place_id')
+    .references(() => places.id)
+    .notNull(),
   category: text('category').notNull(),
-  value: jsonb('value'),
+  value: text('value', { mode: 'json' }),
   confidence: real('confidence').notNull(),
-  evidenceIds: jsonb('evidence_ids').$type<string[]>().notNull().default([]),
-  extractedAt: timestamp('extracted_at').defaultNow().notNull(),
+  evidenceIds: text('evidence_ids', { mode: 'json' })
+    .$type<string[]>()
+    .notNull()
+    .$defaultFn(() => []),
+  extractedAt: integer('extracted_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 
-export const trips = pgTable('trips', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const trips = sqliteTable('trips', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text('name').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 
-export const tripNodes = pgTable('trip_nodes', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  tripId: uuid('trip_id').references(() => trips.id, { onDelete: 'cascade' }).notNull(),
+export const tripNodes = sqliteTable('trip_nodes', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tripId: text('trip_id')
+    .references(() => trips.id, { onDelete: 'cascade' })
+    .notNull(),
   label: text('label'),
   latitude: real('latitude').notNull(),
   longitude: real('longitude').notNull(),
   radiusMiles: real('radius_miles').notNull().default(25),
-  ingestedAt: timestamp('ingested_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  ingestedAt: integer('ingested_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 
-export const tripPlaces = pgTable('trip_places', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  tripId: uuid('trip_id').references(() => trips.id, { onDelete: 'cascade' }).notNull(),
-  placeId: uuid('place_id').references(() => places.id).notNull(),
-  addedAt: timestamp('added_at').defaultNow().notNull(),
+export const tripPlaces = sqliteTable('trip_places', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tripId: text('trip_id')
+    .references(() => trips.id, { onDelete: 'cascade' })
+    .notNull(),
+  placeId: text('place_id')
+    .references(() => places.id)
+    .notNull(),
+  addedAt: integer('added_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
   notes: text('notes'),
 });

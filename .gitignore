@@ -19,6 +19,11 @@ next-env.d.ts
 *.log
 npm-debug.log*
 
+# local database (SQLite — stays on your machine, not committed)
+local.db
+local.db-shm
+local.db-wal
+
 # os
 .DS_Store
 .claude/

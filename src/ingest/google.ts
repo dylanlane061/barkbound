@@ -26,37 +26,7 @@ const METERS_PER_MILE = 1609.344;
 const MAX_RADIUS_METERS = 50_000; // Google Nearby Search hard limit
 const MAX_RESULTS = 20; // Google Nearby Search hard limit per call
 
-// User-facing tags → Google place types. Curated for dog-travel scouting. Google's type
-// vocabulary is commercial-POI-heavy (good for these); trails/dog-parks are weak in
-// Google and better served by OSM enrichment — see the Phase 1.5 "Known gap".
-// Reference: https://developers.google.com/maps/documentation/places/web-service/place-types
-export const PLACE_TAGS = {
-  restaurants: ['restaurant'],
-  cafes: ['cafe', 'coffee_shop'],
-  breweries: ['bar', 'pub'],
-  hotels: ['lodging'],
-  parks: ['park'],
-  campgrounds: ['campground', 'rv_park'],
-  attractions: ['tourist_attraction'],
-} as const;
-
-export type PlaceTag = keyof typeof PLACE_TAGS;
-
-// A sensible default catalog when the user hasn't picked tags.
-export const DEFAULT_INCLUDED_TYPES: string[] = [
-  'restaurant',
-  'cafe',
-  'lodging',
-  'park',
-  'campground',
-  'tourist_attraction',
-];
-
-/** Map user-facing tags to a de-duplicated list of Google `includedTypes`. */
-export function tagsToIncludedTypes(tags: PlaceTag[]): string[] {
-  if (tags.length === 0) return DEFAULT_INCLUDED_TYPES;
-  return [...new Set(tags.flatMap((t) => PLACE_TAGS[t] ?? []))];
-}
+// User-facing tags → Google place types live in '@/lib/place-tags' (client-safe).
 
 export interface PlaceSuggestion {
   placeId: string;
