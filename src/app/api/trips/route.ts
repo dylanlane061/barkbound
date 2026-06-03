@@ -8,11 +8,34 @@ export async function GET() {
   return NextResponse.json(all);
 }
 
+const TONES = ['green', 'sand', 'cool', 'rust', 'alpine'] as const;
+type Tone = (typeof TONES)[number];
+
 export async function POST(request: Request) {
-  const { name } = (await request.json()) as { name: string };
-  if (!name?.trim()) {
+  const body = (await request.json()) as {
+    name?: string;
+    region?: string;
+    coverTone?: string;
+  };
+  const name = body.name?.trim();
+  if (!name) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
-  const [trip] = await db.insert(trips).values({ name: name.trim() }).returning();
+  const coverTone: Tone = TONES.includes(body.coverTone as Tone)
+    ? (body.coverTone as Tone)
+    : 'green';
+
+  // New trips start in "planning"; status promotes to "active" once the user is
+  // mid-trip and to "past" afterwards (out of scope here).
+  const [trip] = await db
+    .insert(trips)
+    .values({
+      name,
+      region: body.region?.trim() || null,
+      coverTone,
+      status: 'planning',
+      updatedAt: new Date(),
+    })
+    .returning();
   return NextResponse.json(trip, { status: 201 });
 }

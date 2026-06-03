@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
 
 export const places = sqliteTable('places', {
@@ -17,6 +18,9 @@ export const places = sqliteTable('places', {
   // 30-day refresh prompt.
   assessedAt: integer('assessed_at', { mode: 'timestamp' }),
   lastIngestedAt: integer('last_ingested_at', { mode: 'timestamp' }),
+  // Display category (one of the design's CATS keys), derived from Google
+  // place `types` at catalog time. Drives the per-place glyph + Discover filters.
+  category: text('category'),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .$defaultFn(() => new Date())
     .notNull(),
@@ -55,9 +59,27 @@ export const signals = sqliteTable('signals', {
 export const trips = sqliteTable('trips', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text('name').notNull(),
+  // Lifecycle state shown as the status pill (orange/slate/muted) and the
+  // segmented gallery filter. Defaults to 'planning' on create.
+  status: text('status', { enum: ['active', 'planning', 'past'] })
+    .notNull()
+    .default('planning'),
+  // Free-text region label ("Northern Arizona") shown on cards/spotlight.
+  region: text('region'),
+  // Cover-photo palette chosen at create time; one of the Photo tones.
+  coverTone: text('cover_tone', { enum: ['green', 'sand', 'cool', 'rust', 'alpine'] })
+    .notNull()
+    .default('green'),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .$defaultFn(() => new Date())
     .notNull(),
+  // Constant DDL default (epoch 0) so SQLite can add the column NOT NULL to
+  // existing rows; the app always supplies a real value on insert ($defaultFn)
+  // and bumps it on edits to reflect "last updated".
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`0`)
+    .$defaultFn(() => new Date()),
 });
 
 export const tripNodes = sqliteTable('trip_nodes', {
@@ -69,6 +91,13 @@ export const tripNodes = sqliteTable('trip_nodes', {
   latitude: real('latitude').notNull(),
   longitude: real('longitude').notNull(),
   radiusMiles: real('radius_miles').notNull().default(25),
+  // Itinerary ordering + per-stop trip facts shown in Trip Detail. `sortOrder`
+  // drives the timeline order (and reorder up/down); `colorIndex` selects the
+  // teardrop-pin color from a rotating palette.
+  sortOrder: integer('sort_order').notNull().default(0),
+  nights: integer('nights').notNull().default(1),
+  notes: text('notes'),
+  colorIndex: integer('color_index').notNull().default(0),
   ingestedAt: integer('ingested_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .$defaultFn(() => new Date())

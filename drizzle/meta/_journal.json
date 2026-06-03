@@ -8,6 +8,13 @@
       "when": 1780525721169,
       "tag": "0000_motionless_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780527730938,
+      "tag": "0001_ordinary_charles_xavier",
+      "breakpoints": true
     }
   ]
 }
