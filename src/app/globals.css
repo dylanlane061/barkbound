@@ -574,6 +574,92 @@ input:focus-visible,
   }
 }
 
+/* ---- Discover: spinners, computing ring, pins, controls ---- */
+@keyframes bbspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.bb-spin {
+  display: inline-block;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--green-700);
+  border-radius: 50%;
+  animation: bbspin 0.7s linear infinite;
+}
+.ring-spin {
+  animation: bbspin 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes pinpulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+.pin-pulse {
+  animation: pinpulse 1s ease-in-out infinite;
+}
+/* small round control button (save / details on result cards) */
+.rc-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.14s, background 0.14s;
+}
+.rc-btn:hover {
+  border-color: var(--green-600);
+  background: var(--green-tint-2);
+}
+.res-card {
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* radius slider */
+.bb-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line-2);
+  outline: none;
+}
+.bb-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--green-800);
+  border: 2px solid var(--card);
+  box-shadow: var(--sh-sm);
+  cursor: pointer;
+}
+.bb-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--green-800);
+  border: 2px solid var(--card);
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-spin,
+  .ring-spin,
+  .pin-pulse,
+  .res-card {
+    animation: none;
+  }
+}
+
 /* gentle entrance when switching screens — transform only, so content is
    never hidden even if the animation is paused (inactive tab) or unsupported */
 @keyframes slideUp {

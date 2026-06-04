@@ -1,6 +1,7 @@
 import { inArray } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { places } from '@/db/schema';
+import { categoryFromTypes } from '@/lib/design/cats';
 import type { PipelineRun } from '@/lib/pipeline';
 import { searchNearby } from './google';
 
@@ -58,6 +59,8 @@ export async function catalogArea(
         address: p.address,
         canonicalSource: 'google',
         externalId: p.placeId,
+        // Derive the display category from Google types so Discover filters work.
+        category: categoryFromTypes(p.types),
       })),
     );
   }
@@ -72,6 +75,7 @@ export async function catalogArea(
           longitude: p.longitude,
           address: p.address,
           canonicalSource: 'google',
+          category: categoryFromTypes(p.types),
         })
         .where(inArray(places.id, [existingByExternalId.get(p.placeId)!])),
     ),
