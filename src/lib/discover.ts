@@ -4,6 +4,7 @@ import { places, tripNodes, trips } from '@/db/schema';
 import { geocode, haversineMiles, radiusToBbox, type BoundingBox } from '@/ingest/geo';
 import { assessPlaces } from '@/lib/assess';
 import { catalogArea } from '@/ingest/catalog';
+import { getPlaceDetails } from '@/ingest/google';
 import { startRun } from '@/lib/pipeline';
 import { getSaveTargets, resolveCurrentTrip, type SaveTargetTrip } from '@/lib/current-trip';
 import type { CatKey } from '@/lib/design/cats';
@@ -87,6 +88,7 @@ export type DiscoverQuery = {
   location: string;
   lat?: number;
   lon?: number;
+  placeId?: string; // Google place_id from autocomplete — resolves exact coords
   tripId?: string;
   nodeId?: string;
 };
@@ -97,6 +99,17 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
   let lat = q.lat;
   let lon = q.lon;
 
+  // Prefer exact coords from a Google place_id (autocomplete selection); fall
+  // back to geocoding the free-text location.
+  if ((lat == null || lon == null) && q.placeId) {
+    try {
+      const details = await getPlaceDetails(q.placeId);
+      lat = details.latitude;
+      lon = details.longitude;
+    } catch {
+      // fall through to geocode
+    }
+  }
   if (lat == null || lon == null) {
     const geo = await geocode(q.location);
     if (!geo) return null;

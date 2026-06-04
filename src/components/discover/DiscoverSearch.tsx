@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import TerrainMap from '@/components/kit/TerrainMap';
 import Icon from '@/components/kit/Icon';
 import { stopColor } from '@/lib/design/confidence';
 
 export type SearchStop = { id: string; name: string; tripId: string; tripName: string; colorIndex: number };
+
+type Suggestion = { placeId: string; primaryText: string; secondaryText?: string };
 
 const POPULAR = [
   'Flagstaff, AZ',
@@ -20,18 +22,44 @@ const POPULAR = [
 export default function DiscoverSearch({ stops }: { stops: SearchStop[] }) {
   const router = useRouter();
   const [q, setQ] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  // One Google Autocomplete session token per search session (billing).
+  const tokenRef = useRef<string>(typeof crypto !== 'undefined' ? crypto.randomUUID() : 'tok');
 
-  function pick(location: string, opts?: { tripId?: string; nodeId?: string }) {
+  function pick(location: string, opts?: { tripId?: string; nodeId?: string; placeId?: string }) {
     // Pass the full "City, State" through for geocoding — stripping the state
     // makes ambiguous names (Georgetown, CO vs TX) resolve to the wrong place.
+    // A Google place_id (from autocomplete) resolves exact coords server-side.
     const params = new URLSearchParams({ location: location.trim() });
+    if (opts?.placeId) params.set('placeId', opts.placeId);
     if (opts?.tripId) params.set('trip', opts.tripId);
     if (opts?.nodeId) params.set('node', opts.nodeId);
     router.push(`/discover?${params.toString()}`);
   }
 
-  const pool = [...POPULAR, ...stops.map((s) => `${s.name}`)];
-  const matches = q.trim()
+  // Debounced Google typeahead.
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/search/autocomplete?q=${encodeURIComponent(query)}&token=${tokenRef.current}`,
+        );
+        if (res.ok) setSuggestions((await res.json()) as Suggestion[]);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 220);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Static fallback (trip stops + popular) when Google returns nothing.
+  const pool = [...POPULAR, ...stops.map((s) => s.name)];
+  const staticMatches = q.trim()
     ? pool.filter((p, i, a) => a.indexOf(p) === i).filter((p) => p.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 5)
     : [];
 
@@ -114,32 +142,40 @@ export default function DiscoverSearch({ stops }: { stops: SearchStop[] }) {
             </button>
           </form>
 
-          {matches.length > 0 && (
+          {(suggestions.length > 0 || staticMatches.length > 0) && (
             <div
               className="card"
               style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', zIndex: 5, padding: 6, boxShadow: 'var(--sh-pop)' }}
             >
-              {matches.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => pick(m)}
-                  className="row g10 center"
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    textAlign: 'left',
-                  }}
-                >
-                  <Icon name="pin" size={16} color="var(--green-700)" />
-                  <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink)' }}>{m}</span>
-                  <span className="grow" />
-                  <Icon name="arrow" size={15} color="var(--line-2)" />
-                </button>
-              ))}
+              {suggestions.length > 0
+                ? suggestions.slice(0, 6).map((s) => (
+                    <button
+                      key={s.placeId}
+                      onClick={() => pick(s.primaryText, { placeId: s.placeId })}
+                      className="row g10 center"
+                      style={suggestRow}
+                    >
+                      <Icon name="pin" size={16} color="var(--green-700)" />
+                      <span className="col" style={{ alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink)' }}>{s.primaryText}</span>
+                        {s.secondaryText && (
+                          <span style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.secondaryText}
+                          </span>
+                        )}
+                      </span>
+                      <span className="grow" />
+                      <Icon name="arrow" size={15} color="var(--line-2)" />
+                    </button>
+                  ))
+                : staticMatches.map((m) => (
+                    <button key={m} onClick={() => pick(m)} className="row g10 center" style={suggestRow}>
+                      <Icon name="pin" size={16} color="var(--green-700)" />
+                      <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink)' }}>{m}</span>
+                      <span className="grow" />
+                      <Icon name="arrow" size={15} color="var(--line-2)" />
+                    </button>
+                  ))}
             </div>
           )}
         </div>
@@ -218,3 +254,13 @@ export default function DiscoverSearch({ stops }: { stops: SearchStop[] }) {
     </div>
   );
 }
+
+const suggestRow: React.CSSProperties = {
+  width: '100%',
+  border: 'none',
+  background: 'transparent',
+  cursor: 'pointer',
+  padding: '10px 12px',
+  borderRadius: 10,
+  textAlign: 'left',
+};

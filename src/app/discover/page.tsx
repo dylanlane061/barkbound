@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export default async function DiscoverPage({
   searchParams,
 }: {
-  searchParams: { location?: string; lat?: string; lon?: string; trip?: string; node?: string };
+  searchParams: { location?: string; lat?: string; lon?: string; placeId?: string; trip?: string; node?: string };
 }) {
   const location = searchParams.location?.trim();
 
@@ -28,6 +28,7 @@ export default async function DiscoverPage({
     location,
     lat: Number.isFinite(lat) ? lat : undefined,
     lon: Number.isFinite(lon) ? lon : undefined,
+    placeId: searchParams.placeId,
     tripId: searchParams.trip,
     nodeId: searchParams.node,
   });
