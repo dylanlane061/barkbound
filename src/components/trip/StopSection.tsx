@@ -55,6 +55,7 @@ export default function StopSection({
   n,
   index,
   total,
+  tripId,
   onMoveUp,
   onMoveDown,
   onRemovePlace,
@@ -64,12 +65,18 @@ export default function StopSection({
   n: number;
   index: number;
   total: number;
+  tripId: string;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemovePlace: (placeId: string) => void;
   onRemoveStop: (() => void) | null;
 }) {
   const last = index === total - 1;
+  // Carry trip + stop + exact coords so Discover saves back to this stop and
+  // skips re-geocoding.
+  const discoverHref =
+    `/discover?location=${encodeURIComponent(stop.name)}` +
+    `&trip=${tripId}&node=${stop.id}&lat=${stop.latitude}&lon=${stop.longitude}`;
 
   return (
     <div className="row" style={{ alignItems: 'stretch', gap: 16 }}>
@@ -184,7 +191,7 @@ export default function StopSection({
 
           {/* discover cta */}
           <Link
-            href={`/discover?location=${encodeURIComponent(stop.name)}`}
+            href={discoverHref}
             className="btn btn-ghost btn-sm"
             style={{ width: '100%', justifyContent: 'center', borderStyle: 'dashed', marginTop: 12, textDecoration: 'none' }}
           >

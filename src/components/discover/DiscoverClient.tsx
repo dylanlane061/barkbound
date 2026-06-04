@@ -147,6 +147,16 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
 
   const onSelect = (id: string) => setSelected((s) => (s === id ? null : id));
 
+  // Open Place Detail, carrying the trip/stop context so its save target +
+  // breadcrumb match where the user is browsing from.
+  function openDetails(id: string) {
+    const params = new URLSearchParams();
+    if (data.saveTarget?.tripId) params.set('trip', data.saveTarget.tripId);
+    if (data.saveTarget?.nodeId) params.set('node', data.saveTarget.nodeId);
+    const qs = params.toString();
+    router.push(`/places/${id}${qs ? `?${qs}` : ''}`);
+  }
+
   let rank = 0;
 
   return (
@@ -261,6 +271,7 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
                       onSelect={onSelect}
                       onSave={onSave}
                       onRun={runCheck}
+                      onOpenDetails={openDetails}
                     />
                   );
                 })}
@@ -295,6 +306,7 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
                     onSave={() => onSave(selPlace.id)}
                     onRun={() => runCheck(selPlace.id)}
                     onClose={() => setSelected(null)}
+                    onOpenDetails={() => openDetails(selPlace.id)}
                   />
                 )
               }

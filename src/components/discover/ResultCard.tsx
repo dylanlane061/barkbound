@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import Photo from '@/components/kit/Photo';
 import Icon from '@/components/kit/Icon';
 import { CATS } from '@/lib/design/cats';
@@ -26,6 +25,7 @@ export default function ResultCard({
   onSelect,
   onSave,
   onRun,
+  onOpenDetails,
 }: {
   place: DiscoverPlace;
   status: LiveStatus;
@@ -38,8 +38,8 @@ export default function ResultCard({
   onSelect: (id: string) => void;
   onSave: (id: string) => void;
   onRun: (id: string) => void;
+  onOpenDetails: (id: string) => void;
 }) {
-  const router = useRouter();
   const scored = status === 'scored';
   const computing = status === 'computing';
   const cat = place.category;
@@ -180,7 +180,7 @@ export default function ResultCard({
                   className="rc-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push(`/places/${place.id}`);
+                    onOpenDetails(place.id);
                   }}
                   title="View details"
                 >
@@ -196,10 +196,18 @@ export default function ResultCard({
           </div>
         ) : (
           <div className="row between center" style={{ marginTop: 11, gap: 10 }}>
-            <span className="row g6 center" style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              <Icon name="shield" size={13} color="var(--muted)" />
-              Not checked yet
-            </span>
+            <button
+              className="row g6 center"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(place.id);
+              }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11.5, color: 'var(--green-700)', fontWeight: 600 }}
+              title="View details"
+            >
+              View details
+              <Icon name="arrow" size={13} color="var(--green-700)" />
+            </button>
             <button
               className="btn btn-orange btn-sm"
               onClick={(e) => {

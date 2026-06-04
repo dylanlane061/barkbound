@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import Photo from '@/components/kit/Photo';
 import Icon from '@/components/kit/Icon';
 import { Conf } from '@/components/kit/Score';
@@ -22,6 +21,7 @@ export default function PeekCard({
   onSave,
   onRun,
   onClose,
+  onOpenDetails,
 }: {
   place: DiscoverPlace;
   status: LiveStatus;
@@ -29,8 +29,8 @@ export default function PeekCard({
   onSave: () => void;
   onRun: () => void;
   onClose: () => void;
+  onOpenDetails: () => void;
 }) {
-  const router = useRouter();
   const scored = status === 'scored' && place.score != null;
   const computing = status === 'computing';
   const cat = place.category;
@@ -92,7 +92,7 @@ export default function PeekCard({
       <div className="col g8" style={{ flexShrink: 0 }}>
         {scored ? (
           <>
-            <button className="btn btn-orange btn-sm" onClick={() => router.push(`/places/${place.id}`)}>
+            <button className="btn btn-orange btn-sm" onClick={onOpenDetails}>
               Details
               <Icon name="arrow" size={14} color="#fff" />
             </button>
@@ -106,24 +106,30 @@ export default function PeekCard({
             </button>
           </>
         ) : (
-          <button
-            className="btn btn-orange btn-sm"
-            onClick={onRun}
-            disabled={computing}
-            style={computing ? { background: 'var(--green-tint)', color: 'var(--green-800)' } : undefined}
-          >
-            {computing ? (
-              <>
-                <Spinner size={13} />
-                Checking…
-              </>
-            ) : (
-              <>
-                <Icon name="paw" size={14} color="#fff" fill="#fff" stroke={0} />
-                Run check
-              </>
-            )}
-          </button>
+          <>
+            <button
+              className="btn btn-orange btn-sm"
+              onClick={onRun}
+              disabled={computing}
+              style={computing ? { background: 'var(--green-tint)', color: 'var(--green-800)' } : undefined}
+            >
+              {computing ? (
+                <>
+                  <Spinner size={13} />
+                  Checking…
+                </>
+              ) : (
+                <>
+                  <Icon name="paw" size={14} color="#fff" fill="#fff" stroke={0} />
+                  Run check
+                </>
+              )}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={onOpenDetails}>
+              <Icon name="doc" size={14} color="var(--green-800)" />
+              Details
+            </button>
+          </>
         )}
       </div>
       <button

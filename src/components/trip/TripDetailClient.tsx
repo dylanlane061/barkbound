@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Crumb from '@/components/kit/Crumb';
 import Icon from '@/components/kit/Icon';
 import Toast, { type ToastData } from '@/components/kit/Toast';
 import { haversineMiles } from '@/ingest/geo';
 import { driveEstimate, relativeTime } from '@/lib/format';
+import { stopColor } from '@/lib/design/confidence';
 import type { TripDetail, StopView } from '@/lib/trip-detail';
 import StopSection from './StopSection';
 import AddStopPanel from './AddStopPanel';
@@ -23,6 +24,14 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
   const router = useRouter();
   const [stops, setStops] = useState<StopView[]>(trip.stops);
   const [toast, setToast] = useState<ToastData | null>(null);
+
+  // Re-sync local stops whenever the server sends fresh trip data (router
+  // .refresh after add-stop, or reconciliation after a failed edit). Without
+  // this, useState keeps its initial value and edits like add-stop don't show
+  // until a full reload (#6).
+  useEffect(() => {
+    setStops(trip.stops);
+  }, [trip]);
 
   const legs = useMemo(
     () => stops.map((s, i) => (i === 0 ? null : legBetween(stops[i - 1], s))),
@@ -91,8 +100,21 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
     const { node } = (await res.json()) as {
       node: { id: string; label: string | null; latitude: number; longitude: number; nights: number; colorIndex: number };
     };
-    // Reflect the new stop locally; refresh in the background so its catalog /
-    // color resolve from the server source of truth.
+    // Optimistically append so it shows instantly (#6); router.refresh then
+    // reconciles to server truth (the useEffect above re-syncs when it lands).
+    setStops((prev) => [
+      ...prev,
+      {
+        id: node.id,
+        name: node.label ?? 'Stop',
+        nights: node.nights,
+        note: null,
+        color: stopColor(node.colorIndex),
+        latitude: node.latitude,
+        longitude: node.longitude,
+        saved: [],
+      },
+    ]);
     router.refresh();
     setToast({ message: `${node.label ?? 'Stop'} added to your trip`, icon: 'check' });
   }
@@ -189,6 +211,7 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
                 n={i + 1}
                 index={i}
                 total={stops.length}
+                tripId={trip.id}
                 onMoveUp={() => moveStop(i, -1)}
                 onMoveDown={() => moveStop(i, 1)}
                 onRemovePlace={(placeId) => removePlace(s.id, placeId)}
