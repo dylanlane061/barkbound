@@ -26,3 +26,19 @@ export function miles(n: number): string {
 export function pluralize(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+// Rough drive-time estimate from straight-line miles. Real routing comes from a
+// distance API later (see ROADMAP); for now assume ~55 mph effective average
+// plus a small road-vs-crow-flies factor.
+export function driveEstimate(straightMiles: number): { miles: number; label: string } {
+  const roadMiles = Math.round(straightMiles * 1.25);
+  const minutes = Math.round((roadMiles / 55) * 60);
+  let label: string;
+  if (minutes < 60) label = `${minutes} min`;
+  else {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    label = m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+  return { miles: roadMiles, label };
+}

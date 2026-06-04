@@ -27,3 +27,16 @@ export const CONF_VAR: Record<ConfTier, string> = {
 export function toScore100(confidence: number): number {
   return Math.round(Math.max(0, Math.min(1, confidence)) * 100);
 }
+
+// Teardrop-pin colors for itinerary stops, selected by trip_nodes.color_index.
+export const STOP_COLORS = [
+  'var(--green-800)',
+  'var(--orange)',
+  '#b08a4f',
+  'var(--green-600)',
+  '#7a8a5c',
+];
+
+export function stopColor(colorIndex: number): string {
+  return STOP_COLORS[((colorIndex % STOP_COLORS.length) + STOP_COLORS.length) % STOP_COLORS.length];
+}

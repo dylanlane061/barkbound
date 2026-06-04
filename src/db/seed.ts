@@ -306,24 +306,27 @@ async function run() {
 
     for (let i = 0; i < t.stops.length; i++) {
       const stop = t.stops[i];
-      await db.insert(tripNodes).values({
-        tripId: trip.id,
-        label: stop.label,
-        latitude: stop.lat,
-        longitude: stop.lon,
-        radiusMiles: 25,
-        sortOrder: i,
-        nights: stop.nights,
-        colorIndex: i % 3,
-        ingestedAt: new Date(),
-      });
-    }
+      const [node] = await db
+        .insert(tripNodes)
+        .values({
+          tripId: trip.id,
+          label: stop.label,
+          latitude: stop.lat,
+          longitude: stop.lon,
+          radiusMiles: 25,
+          sortOrder: i,
+          nights: stop.nights,
+          colorIndex: i % 5,
+          ingestedAt: new Date(),
+        })
+        .returning({ id: tripNodes.id });
 
-    const savedKeys = [...new Set(t.stops.flatMap((s) => s.saved))];
-    for (const key of savedKeys) {
-      const placeId = idByKey.get(key);
-      if (placeId) {
-        await db.insert(tripPlaces).values({ tripId: trip.id, placeId });
+      // Saved places attach to the stop they were discovered under.
+      for (const key of [...new Set(stop.saved)]) {
+        const placeId = idByKey.get(key);
+        if (placeId) {
+          await db.insert(tripPlaces).values({ tripId: trip.id, nodeId: node.id, placeId });
+        }
       }
     }
   }

@@ -13,6 +13,20 @@ export type PlaceScore = {
   tier: ConfTier;
   signalCount: number;
   sources: string[];
+  /** One-line "why" from the top-contributing signal category. */
+  reason: string;
+};
+
+// Human phrasing for each signal category — used for the one-line "why" on
+// result cards and saved rows.
+const CATEGORY_REASON: Record<string, string> = {
+  pets_allowed: 'Dogs allowed',
+  designated_area: 'Designated dog area',
+  leash_required: 'Leashed dogs welcome',
+  water_access: 'Water access for dogs',
+  trail_access: 'Dog-friendly trails',
+  pet_fee: 'Pet fee applies',
+  size_restriction: 'Size restrictions apply',
 };
 
 // Bulk-score a set of places from their stored signals + sources. Loading
@@ -58,12 +72,14 @@ export async function assessPlaces(placeIds: string[]): Promise<Map<string, Plac
     const sources = sourcesByPlace.get(placeId) ?? [];
     const assessment = score(placeId, sigs, sources as SourceId[]);
     const s = toScore100(assessment.confidence);
+    const topCategory = assessment.breakdown.contributions[0]?.category;
     result.set(placeId, {
       score: s,
       confidence: assessment.confidence,
       tier: confOf(s),
       signalCount: sigs.length,
       sources,
+      reason: (topCategory && CATEGORY_REASON[topCategory]) || 'Dog-friendly signals found',
     });
   }
 

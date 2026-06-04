@@ -15,6 +15,13 @@
       "when": 1780527730938,
       "tag": "0001_ordinary_charles_xavier",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780528497662,
+      "tag": "0002_jittery_proudstar",
+      "breakpoints": true
     }
   ]
 }

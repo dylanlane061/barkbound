@@ -109,6 +109,10 @@ export const tripPlaces = sqliteTable('trip_places', {
   tripId: text('trip_id')
     .references(() => trips.id, { onDelete: 'cascade' })
     .notNull(),
+  // Which stop the place was saved under. Saved places are grouped by stop in
+  // Trip Detail; removing a stop cascades to its saved rows. Nullable for
+  // trip-level saves that predate a node association.
+  nodeId: text('node_id').references(() => tripNodes.id, { onDelete: 'cascade' }),
   placeId: text('place_id')
     .references(() => places.id)
     .notNull(),
