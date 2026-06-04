@@ -161,7 +161,12 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
   const placesOut: DiscoverPlace[] = rows
     .map((p) => {
       const distanceMiles = haversineMiles(lat!, lon!, p.latitude!, p.longitude!);
-      const sc = p.assessedAt != null ? scores.get(p.id) : undefined;
+      // Status is driven by assessed_at, NOT by whether signals exist: a place
+      // assessed with zero dog-evidence is "scored" at a low/zero score ("we
+      // looked and found little") — an honest, different statement from "never
+      // assessed". This is what makes a check "stick" on return (#11).
+      const assessed = p.assessedAt != null;
+      const sc = assessed ? scores.get(p.id) : undefined;
       return {
         id: p.id,
         name: p.name,
@@ -170,11 +175,11 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
         latitude: p.latitude!,
         longitude: p.longitude!,
         distanceMiles,
-        status: (sc ? 'scored' : 'unscored') as 'scored' | 'unscored',
-        score: sc?.score ?? null,
-        tier: sc?.tier ?? 'slate',
-        reason: sc?.reason ?? 'Not checked yet',
-        sources: sc?.sources.length ?? 1,
+        status: (assessed ? 'scored' : 'unscored') as 'scored' | 'unscored',
+        score: assessed ? (sc?.score ?? 0) : null,
+        tier: assessed ? (sc?.tier ?? 'lo') : 'slate',
+        reason: sc?.reason ?? (assessed ? 'We found little dog-specific evidence' : 'Not checked yet'),
+        sources: sc?.sources.length ?? (assessed ? 0 : 1),
       } satisfies DiscoverPlace;
     })
     .filter((p) => p.distanceMiles <= MAX_LOAD_MILES);

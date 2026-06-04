@@ -1,9 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { osmExtractor } from '@pawsignal';
 import type { RawRecord } from '@pawsignal';
 import { db } from '@/db/client';
 import { places, rawRecords, signals } from '@/db/schema';
 import { haversineMiles, radiusToBbox, type BoundingBox } from '@/ingest/geo';
+import { getPlaceDetails } from '@/ingest/google';
 import { assessPlaces, type PlaceScore } from '@/lib/assess';
 
 // On-demand per-place assessment (ROADMAP Phase 1.5c). Collects real OSM
@@ -61,11 +62,12 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
   const [place] = await db.select().from(places).where(eq(places.id, placeId));
   if (!place) return { ok: false, error: 'Place not found' };
 
-  // Replace any prior OSM evidence for this place so re-runs don't duplicate.
+  // Replace any prior enrichment evidence for this place so re-runs don't
+  // duplicate (OSM area features + the live Google attribute).
   await db.delete(signals).where(eq(signals.placeId, placeId));
   await db
     .delete(rawRecords)
-    .where(and(eq(rawRecords.placeId, placeId), eq(rawRecords.source, 'osm')));
+    .where(and(eq(rawRecords.placeId, placeId), inArray(rawRecords.source, ['osm', 'google'])));
 
   let evidenceFound = 0;
 
@@ -132,6 +134,40 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
         );
         evidenceFound += partials.length;
       }
+    }
+  }
+
+  // Google live signal: if Google marks the place dog-friendly, add it as a
+  // second corroborating source. We persist only the derived boolean (not
+  // Google's full payload) and only the positive case — score() weights by
+  // evidence confidence and doesn't model negative polarity, so a confident
+  // "no dogs" would wrongly raise the score. allowsDogs uses the canonical
+  // Google place_id stored in external_id.
+  if (place.externalId && place.canonicalSource === 'google') {
+    try {
+      const details = await getPlaceDetails(place.externalId);
+      if (details.allowsDogs === true) {
+        const [raw] = await db
+          .insert(rawRecords)
+          .values({
+            placeId,
+            source: 'google',
+            sourceEntityId: place.externalId,
+            raw: { allowsDogs: true, note: 'Google Place attribute (derived, live read)' },
+            fetchedAt: new Date(),
+          })
+          .returning({ id: rawRecords.id });
+        await db.insert(signals).values({
+          placeId,
+          category: 'pets_allowed',
+          value: true,
+          confidence: 0.75,
+          evidenceIds: [raw.id],
+        });
+        evidenceFound += 1;
+      }
+    } catch {
+      // Missing/invalid place_id or API error — skip the Google signal.
     }
   }
 
