@@ -108,40 +108,29 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
     }
   }
 
-  async function onSave(id: string) {
-    const place = places.find((p) => p.id === id);
-    if (!place) return;
-    const isSaved = saved.has(id);
-    setSaved((s) => {
-      const n = new Set(s);
-      if (isSaved) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-
-    if (!data.saveTarget) {
-      setToast({ message: 'Create a trip first to save places.', icon: 'x' });
-      return;
-    }
-
-    if (isSaved) {
-      await fetch(`/api/trips/${data.saveTarget.tripId}/places`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ placeId: id, nodeId: data.saveTarget.nodeId ?? undefined }),
-      });
-      return;
-    }
-
-    await fetch(`/api/trips/${data.saveTarget.tripId}/places`, {
+  // Save a place to a chosen trip + stop (from the SaveButton picker).
+  async function saveTo(
+    placeId: string,
+    tripId: string,
+    nodeId: string | null,
+    tripName: string,
+    stopLabel: string | null,
+  ) {
+    const place = places.find((p) => p.id === placeId);
+    setSaved((s) => new Set(s).add(placeId));
+    const res = await fetch(`/api/trips/${tripId}/places`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ placeId: id, nodeId: data.saveTarget.nodeId ?? undefined }),
+      body: JSON.stringify({ placeId, nodeId: nodeId ?? undefined }),
     });
+    if (!res.ok) {
+      setToast({ message: 'Could not save — please try again.', icon: 'x' });
+      return;
+    }
     setToast({
-      message: `Saved ${place.name}`,
+      message: `Saved ${place?.name ?? 'place'}${stopLabel ? ` to ${stopLabel}` : ''} · ${tripName}`,
       icon: 'check',
-      action: { label: 'View trip', onClick: () => router.push(`/trips/${data.saveTarget!.tripId}`) },
+      action: { label: 'View trip', onClick: () => router.push(`/trips/${tripId}`) },
     });
   }
 
@@ -267,9 +256,10 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
                       idx={i}
                       selected={selected === p.id}
                       saved={saved.has(p.id)}
+                      targets={data.saveTargets}
                       onHover={setHovered}
                       onSelect={onSelect}
-                      onSave={onSave}
+                      onSaveTo={saveTo}
                       onRun={runCheck}
                       onOpenDetails={openDetails}
                     />
@@ -303,7 +293,10 @@ export default function DiscoverClient({ data }: { data: DiscoverData }) {
                     place={selPlace}
                     status={statusOf(selPlace.id)}
                     saved={saved.has(selPlace.id)}
-                    onSave={() => onSave(selPlace.id)}
+                    targets={data.saveTargets}
+                    onSaveTo={(tripId, nodeId, tripName, stopLabel) =>
+                      saveTo(selPlace.id, tripId, nodeId, tripName, stopLabel)
+                    }
                     onRun={() => runCheck(selPlace.id)}
                     onClose={() => setSelected(null)}
                     onOpenDetails={() => openDetails(selPlace.id)}

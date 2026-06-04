@@ -6,6 +6,8 @@ import { CATS } from '@/lib/design/cats';
 import { CONF_VAR } from '@/lib/design/confidence';
 import { pluralize } from '@/lib/format';
 import type { DiscoverPlace } from '@/lib/discover';
+import type { SaveTargetTrip } from '@/lib/current-trip';
+import SaveButton from '@/components/trips/SaveButton';
 import StatusRing, { type LiveStatus } from './StatusRing';
 import Spinner from './Spinner';
 
@@ -21,9 +23,10 @@ export default function ResultCard({
   idx,
   selected,
   saved,
+  targets,
   onHover,
   onSelect,
-  onSave,
+  onSaveTo,
   onRun,
   onOpenDetails,
 }: {
@@ -34,9 +37,10 @@ export default function ResultCard({
   idx: number;
   selected: boolean;
   saved: boolean;
+  targets: SaveTargetTrip[];
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
-  onSave: (id: string) => void;
+  onSaveTo: (placeId: string, tripId: string, nodeId: string | null, tripName: string, stopLabel: string | null) => void;
   onRun: (id: string) => void;
   onOpenDetails: (id: string) => void;
 }) {
@@ -165,17 +169,14 @@ export default function ResultCard({
                 {pluralize(place.sources, 'source')} checked
               </span>
               <div className="row g6 center">
-                <button
-                  className="rc-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSave(place.id);
-                  }}
-                  title={saved ? 'Saved' : 'Save to trip'}
-                  style={saved ? { color: 'var(--hi)', borderColor: 'var(--hi-line)', background: 'var(--hi-bg)' } : undefined}
-                >
-                  <Icon name={saved ? 'check' : 'bookmark'} size={14} color={saved ? 'var(--hi)' : 'var(--green-800)'} stroke={saved ? 2.4 : 1.7} />
-                </button>
+                <SaveButton
+                  targets={targets}
+                  saved={saved}
+                  variant="icon"
+                  onPick={(tripId, nodeId, tripName, stopLabel) =>
+                    onSaveTo(place.id, tripId, nodeId, tripName, stopLabel)
+                  }
+                />
                 <button
                   className="rc-btn"
                   onClick={(e) => {

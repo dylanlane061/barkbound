@@ -5,6 +5,7 @@ import { geocode, haversineMiles, radiusToBbox, type BoundingBox } from '@/inges
 import { assessPlaces } from '@/lib/assess';
 import { catalogArea } from '@/ingest/catalog';
 import { startRun } from '@/lib/pipeline';
+import { getSaveTargets, resolveCurrentTrip, type SaveTargetTrip } from '@/lib/current-trip';
 import type { CatKey } from '@/lib/design/cats';
 import type { ConfTier } from '@/lib/design/confidence';
 
@@ -78,6 +79,7 @@ export type DiscoverData = {
   fromTrip: boolean;
   breadcrumbTrip: { id: string; name: string } | null;
   saveTarget: SaveTarget;
+  saveTargets: SaveTargetTrip[];
   places: DiscoverPlace[];
 };
 
@@ -114,15 +116,11 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
     }
   }
   if (!saveTarget) {
-    // Default save target: the active trip (saved trip-level).
-    const [active] = await db
-      .select()
-      .from(trips)
-      .where(eq(trips.status, 'active'))
-      .orderBy(desc(trips.updatedAt))
-      .limit(1);
-    if (active) saveTarget = { tripId: active.id, tripName: active.name, nodeId: null };
+    // Default save target: the current trip (active, else most recent).
+    const current = await resolveCurrentTrip();
+    if (current) saveTarget = { tripId: current.id, tripName: current.name, nodeId: null };
   }
+  const saveTargets = await getSaveTargets();
 
   // Load known places within the widest radius.
   const bbox = radiusToBbox(lat, lon, MAX_LOAD_MILES);
@@ -194,6 +192,7 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
     fromTrip: Boolean(q.tripId),
     breadcrumbTrip,
     saveTarget,
+    saveTargets,
     places: placesOut,
   };
 }

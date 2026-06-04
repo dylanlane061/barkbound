@@ -1,9 +1,10 @@
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { score } from '@pawsignal';
 import type { Signal, SourceId } from '@pawsignal';
 import { db } from '@/db/client';
 import { places, rawRecords, signals as signalsTable, tripNodes, trips } from '@/db/schema';
 import { confOf, toScore100, type ConfTier } from '@/lib/design/confidence';
+import { getSaveTargets, resolveCurrentTrip, type SaveTargetTrip } from '@/lib/current-trip';
 import type { CatKey } from '@/lib/design/cats';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -62,6 +63,7 @@ export type PlaceDetail = {
   tags: string[];
   evidence: EvidenceRow[];
   saveTarget: { tripId: string; tripName: string; nodeId: string | null } | null;
+  saveTargets: SaveTargetTrip[];
   breadcrumb: { label: string; href?: string }[];
 };
 
@@ -131,17 +133,14 @@ export async function getPlaceDetail(
     }
   }
   if (!saveTarget) {
-    const [active] = await db
-      .select()
-      .from(trips)
-      .where(eq(trips.status, 'active'))
-      .orderBy(desc(trips.updatedAt))
-      .limit(1);
-    if (active) saveTarget = { tripId: active.id, tripName: active.name, nodeId: null };
+    const current = await resolveCurrentTrip();
+    if (current) saveTarget = { tripId: current.id, tripName: current.name, nodeId: null };
     breadcrumb.push({ label: 'Discover', href: '/discover' });
     if (place.city) breadcrumb.push({ label: place.city, href: `/discover?location=${encodeURIComponent(place.city)}` });
   }
   breadcrumb.push({ label: place.name });
+
+  const saveTargets = await getSaveTargets();
 
   return {
     id: place.id,
@@ -159,6 +158,7 @@ export async function getPlaceDetail(
     tags,
     evidence,
     saveTarget,
+    saveTargets,
     breadcrumb,
   };
 }

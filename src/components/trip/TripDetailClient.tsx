@@ -10,7 +10,9 @@ import { driveEstimate, relativeTime } from '@/lib/format';
 import { stopColor } from '@/lib/design/confidence';
 import type { TripDetail, StopView } from '@/lib/trip-detail';
 import StopSection from './StopSection';
+import SavedRow from './SavedRow';
 import AddStopPanel from './AddStopPanel';
+import TripActionsMenu from './TripActionsMenu';
 import Leg from './Leg';
 
 function legBetween(a: StopView, b: StopView): { miles: number; label: string } | null {
@@ -23,14 +25,16 @@ function legBetween(a: StopView, b: StopView): { miles: number; label: string } 
 export default function TripDetailClient({ trip }: { trip: TripDetail }) {
   const router = useRouter();
   const [stops, setStops] = useState<StopView[]>(trip.stops);
+  const [unassigned, setUnassigned] = useState(trip.unassignedSaved);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // Re-sync local stops whenever the server sends fresh trip data (router
+  // Re-sync local state whenever the server sends fresh trip data (router
   // .refresh after add-stop, or reconciliation after a failed edit). Without
   // this, useState keeps its initial value and edits like add-stop don't show
   // until a full reload (#6).
   useEffect(() => {
     setStops(trip.stops);
+    setUnassigned(trip.unassignedSaved);
   }, [trip]);
 
   const legs = useMemo(
@@ -71,6 +75,16 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ placeId, nodeId }),
+    });
+    if (!res.ok) router.refresh();
+  }
+
+  async function removeUnassigned(placeId: string) {
+    setUnassigned((prev) => prev.filter((p) => p.id !== placeId));
+    const res = await fetch(`/api/trips/${trip.id}/places`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ placeId }),
     });
     if (!res.ok) router.refresh();
   }
@@ -181,6 +195,7 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
                 <Icon name="share" size={16} color="var(--green-800)" />
                 Share
               </button>
+              <TripActionsMenu tripId={trip.id} status={trip.status} name={trip.name} />
             </div>
           </div>
         </div>
@@ -220,6 +235,23 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
             </div>
           ))}
         </div>
+
+        {unassigned.length > 0 && (
+          <div style={{ paddingLeft: 50, marginTop: 8, marginBottom: 20 }}>
+            <div className="row g8 center" style={{ marginBottom: 10 }}>
+              <Icon name="bookmark" size={15} color="var(--green-700)" />
+              <h3 className="display" style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--green-900)', margin: 0 }}>
+                Saved to this trip
+              </h3>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>· not tied to a stop</span>
+            </div>
+            <div className="col g8">
+              {unassigned.map((p) => (
+                <SavedRow key={p.id} place={p} top={false} onRemove={removeUnassigned} />
+              ))}
+            </div>
+          </div>
+        )}
 
         <AddStopPanel existingNames={stops.map((s) => s.name)} onAdd={addStop} />
 

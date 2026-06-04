@@ -4,8 +4,9 @@ import Photo from '@/components/kit/Photo';
 import Icon from '@/components/kit/Icon';
 import { Conf } from '@/components/kit/Score';
 import { CATS } from '@/lib/design/cats';
-import { pluralize } from '@/lib/format';
 import type { DiscoverPlace } from '@/lib/discover';
+import type { SaveTargetTrip } from '@/lib/current-trip';
+import SaveButton from '@/components/trips/SaveButton';
 import StatusRing, { type LiveStatus } from './StatusRing';
 import Spinner from './Spinner';
 
@@ -18,7 +19,8 @@ export default function PeekCard({
   place,
   status,
   saved,
-  onSave,
+  targets,
+  onSaveTo,
   onRun,
   onClose,
   onOpenDetails,
@@ -26,7 +28,8 @@ export default function PeekCard({
   place: DiscoverPlace;
   status: LiveStatus;
   saved: boolean;
-  onSave: () => void;
+  targets: SaveTargetTrip[];
+  onSaveTo: (tripId: string, nodeId: string | null, tripName: string, stopLabel: string | null) => void;
   onRun: () => void;
   onClose: () => void;
   onOpenDetails: () => void;
@@ -96,14 +99,7 @@ export default function PeekCard({
               Details
               <Icon name="arrow" size={14} color="#fff" />
             </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={onSave}
-              style={saved ? { color: 'var(--hi)', borderColor: 'var(--hi-line)', background: 'var(--hi-bg)' } : undefined}
-            >
-              <Icon name={saved ? 'check' : 'bookmark'} size={14} color={saved ? 'var(--hi)' : 'var(--green-800)'} stroke={saved ? 2.4 : 1.7} />
-              {saved ? 'Saved' : 'Save'}
-            </button>
+            <SaveButton targets={targets} saved={saved} variant="ghost" onPick={onSaveTo} />
           </>
         ) : (
           <>

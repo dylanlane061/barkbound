@@ -11,6 +11,7 @@ import { CATS } from '@/lib/design/cats';
 import { CONF_LABEL, CONF_VAR } from '@/lib/design/confidence';
 import { pluralize } from '@/lib/format';
 import type { PlaceDetail } from '@/lib/place-detail';
+import SaveButton from '@/components/trips/SaveButton';
 import PlaceGallery from './PlaceGallery';
 import EvidenceRow from './EvidenceRow';
 import Spinner from '@/components/discover/Spinner';
@@ -50,21 +51,26 @@ export default function PlaceDetailClient({ data }: { data: PlaceDetail }) {
     }
   }
 
-  async function save() {
-    if (!data.saveTarget) {
-      setToast({ message: 'Create a trip first to save places.', icon: 'x' });
-      return;
-    }
+  async function saveTo(
+    tripId: string,
+    nodeId: string | null,
+    tripName: string,
+    stopLabel: string | null,
+  ) {
     setSaved(true);
-    await fetch(`/api/trips/${data.saveTarget.tripId}/places`, {
+    const res = await fetch(`/api/trips/${tripId}/places`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ placeId: data.id, nodeId: data.saveTarget.nodeId ?? undefined }),
+      body: JSON.stringify({ placeId: data.id, nodeId: nodeId ?? undefined }),
     });
+    if (!res.ok) {
+      setToast({ message: 'Could not save — please try again.', icon: 'x' });
+      return;
+    }
     setToast({
-      message: `Saved to ${data.saveTarget.tripName}`,
+      message: `Saved${stopLabel ? ` to ${stopLabel}` : ''} · ${tripName}`,
       icon: 'check',
-      action: { label: 'View trip', onClick: () => router.push(`/trips/${data.saveTarget!.tripId}`) },
+      action: { label: 'View trip', onClick: () => router.push(`/trips/${tripId}`) },
     });
   }
 
@@ -196,14 +202,13 @@ export default function PlaceDetailClient({ data }: { data: PlaceDetail }) {
                 </span>
               </div>
               <div className="col g8" style={{ width: '100%' }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={save}
-                  style={{ width: '100%', ...(saved ? { background: 'var(--hi)' } : {}) }}
-                >
-                  <Icon name={saved ? 'check' : 'bookmark'} size={16} color="#fff" stroke={saved ? 2.4 : 1.7} />
-                  {saved ? 'Saved to trip' : data.saveTarget ? `Save to ${data.saveTarget.tripName}` : 'Save to trip'}
-                </button>
+                <SaveButton
+                  targets={data.saveTargets}
+                  saved={saved}
+                  variant="primary"
+                  label={saved ? 'Saved to trip' : 'Save to trip'}
+                  onPick={saveTo}
+                />
                 <button className="btn btn-ghost" onClick={() => runAssess(true)} style={{ width: '100%' }}>
                   <Icon name="refresh" size={16} color="var(--green-800)" />
                   Refresh score

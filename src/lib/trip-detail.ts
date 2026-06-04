@@ -35,6 +35,8 @@ export type TripDetail = {
   region: string | null;
   updatedAt: Date;
   stops: StopView[];
+  // Saved places not tied to a specific stop (e.g. saved "to the trip").
+  unassignedSaved: SavedPlaceView[];
   // Derived totals (recomputed live as the client edits).
   placeCount: number;
 };
@@ -65,47 +67,54 @@ export async function getTripDetail(tripId: string): Promise<TripDetail | null> 
   const assessedIds = saved.filter((s) => s.assessedAt != null).map((s) => s.placeId);
   const scores = await assessPlaces([...new Set(assessedIds)]);
 
-  const savedByNode = new Map<string, typeof saved>();
+  type SavedRow = (typeof saved)[number];
+  // Build a saved-place view. Status follows assessed_at, not signal presence
+  // (an assessed place with no evidence stays "scored" at a low score).
+  const toView = (r: SavedRow, ref?: { lat: number; lon: number }): SavedPlaceView => {
+    const sc = scores.get(r.placeId);
+    const assessed = r.assessedAt != null;
+    const distanceMiles =
+      ref && r.latitude != null && r.longitude != null
+        ? haversineMiles(ref.lat, ref.lon, r.latitude, r.longitude)
+        : null;
+    return {
+      id: r.placeId,
+      name: r.name,
+      category: (r.category as CatKey | null) ?? null,
+      distanceMiles,
+      summary: sc?.reason ?? (assessed ? 'We found little dog-specific evidence' : 'Not assessed yet'),
+      score: assessed ? (sc?.score ?? 0) : null,
+      tier: assessed ? (sc?.tier ?? 'lo') : 'slate',
+    };
+  };
+  const byScore = (a: SavedPlaceView, b: SavedPlaceView) => (b.score ?? -1) - (a.score ?? -1);
+
+  const savedByNode = new Map<string, SavedRow[]>();
+  const unassigned: SavedRow[] = [];
   for (const s of saved) {
-    if (!s.nodeId) continue;
+    if (!s.nodeId) {
+      unassigned.push(s);
+      continue;
+    }
     const list = savedByNode.get(s.nodeId) ?? [];
     list.push(s);
     savedByNode.set(s.nodeId, list);
   }
 
-  const stops: StopView[] = nodes.map((node) => {
-    const rows = savedByNode.get(node.id) ?? [];
-    const savedViews: SavedPlaceView[] = rows
-      .map((r) => {
-        const sc = scores.get(r.placeId);
-        const distanceMiles =
-          r.latitude != null && r.longitude != null
-            ? haversineMiles(node.latitude, node.longitude, r.latitude, r.longitude)
-            : null;
-        return {
-          id: r.placeId,
-          name: r.name,
-          category: (r.category as CatKey | null) ?? null,
-          distanceMiles,
-          summary: sc?.reason ?? 'Not assessed yet',
-          score: sc?.score ?? null,
-          tier: sc?.tier ?? 'slate',
-        } satisfies SavedPlaceView;
-      })
-      // Scored places rank above unscored; within each, higher score first.
-      .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const stops: StopView[] = nodes.map((node) => ({
+    id: node.id,
+    name: node.label ?? 'Stop',
+    nights: node.nights,
+    note: node.notes,
+    color: stopColor(node.colorIndex),
+    latitude: node.latitude,
+    longitude: node.longitude,
+    saved: (savedByNode.get(node.id) ?? [])
+      .map((r) => toView(r, { lat: node.latitude, lon: node.longitude }))
+      .sort(byScore),
+  }));
 
-    return {
-      id: node.id,
-      name: node.label ?? 'Stop',
-      nights: node.nights,
-      note: node.notes,
-      color: stopColor(node.colorIndex),
-      latitude: node.latitude,
-      longitude: node.longitude,
-      saved: savedViews,
-    };
-  });
+  const unassignedSaved: SavedPlaceView[] = unassigned.map((r) => toView(r)).sort(byScore);
 
   return {
     id: trip.id,
@@ -114,6 +123,7 @@ export async function getTripDetail(tripId: string): Promise<TripDetail | null> 
     region: trip.region,
     updatedAt: trip.updatedAt,
     stops,
+    unassignedSaved,
     placeCount: saved.length,
   };
 }
