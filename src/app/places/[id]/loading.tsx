@@ -1,23 +1,28 @@
+// Loading skeleton for Place Detail (gallery + two-column body).
 export default function Loading() {
   return (
-    <main className="min-h-screen">
-      <div className="max-w-2xl mx-auto px-4 py-16 animate-pulse">
-        <div className="h-4 w-28 rounded bg-stone-200" />
-
-        <div className="mt-8 flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="h-8 w-2/3 rounded bg-stone-200" />
-            <div className="mt-2 h-4 w-32 rounded bg-stone-200" />
-          </div>
-          <div className="h-8 w-20 rounded-full bg-stone-200" />
+    <div style={{ maxWidth: 1180, margin: '0 auto', padding: '28px 28px 80px', width: '100%' }}>
+      <div className="sk" style={{ width: 320, height: 12, marginBottom: 18 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, height: 280, marginBottom: 28 }}>
+        <div className="sk" style={{ height: '100%', borderRadius: 16 }} />
+        <div className="col g12" style={{ height: '100%' }}>
+          <div className="sk" style={{ height: '100%', borderRadius: 16 }} />
+          <div className="sk" style={{ height: '100%', borderRadius: 16 }} />
         </div>
-
-        <ul className="mt-8 space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <li key={i} className="h-14 rounded-lg border border-stone-200 bg-white" />
-          ))}
-        </ul>
       </div>
-    </main>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 36, alignItems: 'start' }}>
+        <div>
+          <div className="sk" style={{ width: 140, height: 12, marginBottom: 12 }} />
+          <div className="sk" style={{ width: 320, height: 34, marginBottom: 12 }} />
+          <div className="sk" style={{ width: 220, height: 12, marginBottom: 22 }} />
+          <div className="col g8">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="sk" style={{ width: '100%', height: 60, borderRadius: 12 }} />
+            ))}
+          </div>
+        </div>
+        <div className="sk" style={{ height: 320, borderRadius: 16 }} />
+      </div>
+    </div>
   );
 }
