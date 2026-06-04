@@ -22,8 +22,9 @@ export default function DiscoverSearch({ stops }: { stops: SearchStop[] }) {
   const [q, setQ] = useState('');
 
   function pick(location: string, opts?: { tripId?: string; nodeId?: string }) {
-    const name = location.replace(/,.*$/, '').trim() || location.trim();
-    const params = new URLSearchParams({ location: name });
+    // Pass the full "City, State" through for geocoding — stripping the state
+    // makes ambiguous names (Georgetown, CO vs TX) resolve to the wrong place.
+    const params = new URLSearchParams({ location: location.trim() });
     if (opts?.tripId) params.set('trip', opts.tripId);
     if (opts?.nodeId) params.set('node', opts.nodeId);
     router.push(`/discover?${params.toString()}`);

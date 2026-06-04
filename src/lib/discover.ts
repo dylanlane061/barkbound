@@ -1,14 +1,58 @@
 import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { places, tripNodes, trips } from '@/db/schema';
-import { geocode, haversineMiles, radiusToBbox } from '@/ingest/geo';
+import { geocode, haversineMiles, radiusToBbox, type BoundingBox } from '@/ingest/geo';
 import { assessPlaces } from '@/lib/assess';
+import { catalogArea } from '@/ingest/catalog';
+import { startRun } from '@/lib/pipeline';
 import type { CatKey } from '@/lib/design/cats';
 import type { ConfTier } from '@/lib/design/confidence';
 
 // Widest radius we ever load (the slider maxes at 50mi); the client filters
 // down from this set so changing the radius doesn't refetch.
 const MAX_LOAD_MILES = 50;
+// Google Nearby caps radius at 50km (~31mi), so the on-search catalog covers
+// up to that; the display radius can still reach 50mi for already-known places.
+const CATALOG_RADIUS_MILES = 31;
+// A fan-out catalog stamps lastIngestedAt on dozens of places at once. If fewer
+// than this many places in range were stamped recently, the area is treated as
+// uncovered (a new city, or one last covered before the per-type fan-out) and
+// we re-catalog. The count (not "any") guards against a stray recently-assessed
+// place making a thin area look covered.
+const CATALOG_FRESH_DAYS = 7;
+const MIN_FRESH_PLACES = 10;
+// Type fan-out for the catalog — broad enough to cover the design's categories
+// (trails/dog parks/breweries included). Each is one Nearby call.
+const DISCOVER_CATALOG_TYPES = [
+  'restaurant',
+  'cafe',
+  'coffee_shop',
+  'bar',
+  'pub',
+  'lodging',
+  'park',
+  'dog_park',
+  'campground',
+  'rv_park',
+  'tourist_attraction',
+  'hiking_area',
+];
+
+function placesInBbox(bbox: BoundingBox) {
+  return db
+    .select()
+    .from(places)
+    .where(
+      and(
+        isNotNull(places.latitude),
+        isNotNull(places.longitude),
+        gte(places.latitude, bbox.minLat),
+        lte(places.latitude, bbox.maxLat),
+        gte(places.longitude, bbox.minLon),
+        lte(places.longitude, bbox.maxLon),
+      ),
+    );
+}
 
 export type DiscoverPlace = {
   id: string;
@@ -80,21 +124,36 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
     if (active) saveTarget = { tripId: active.id, tripName: active.name, nodeId: null };
   }
 
-  // Catalog places within the widest radius.
+  // Load known places within the widest radius.
   const bbox = radiusToBbox(lat, lon, MAX_LOAD_MILES);
-  const rows = await db
-    .select()
-    .from(places)
-    .where(
-      and(
-        isNotNull(places.latitude),
-        isNotNull(places.longitude),
-        gte(places.latitude, bbox.minLat),
-        lte(places.latitude, bbox.maxLat),
-        gte(places.longitude, bbox.minLon),
-        lte(places.longitude, bbox.maxLon),
-      ),
-    );
+  let rows = await placesInBbox(bbox);
+
+  // Catalog-on-search: if no nearby place was catalogued recently (a brand-new
+  // city, or one last covered before the per-type fan-out), pull a fresh
+  // catalog from Google and re-query. Best-effort — without a Google key it
+  // simply returns whatever is already known.
+  const freshCutoff = Date.now() - CATALOG_FRESH_DAYS * 86_400_000;
+  const freshCount = rows.filter(
+    (r) => r.lastIngestedAt != null && new Date(r.lastIngestedAt).getTime() > freshCutoff,
+  ).length;
+  if (freshCount < MIN_FRESH_PLACES) {
+    const run = startRun(`Catalog ${q.location}`);
+    try {
+      const result = await catalogArea(
+        {
+          latitude: lat,
+          longitude: lon,
+          radiusMiles: CATALOG_RADIUS_MILES,
+          includedTypes: DISCOVER_CATALOG_TYPES,
+        },
+        run,
+      );
+      run.done('Catalogued on search', { ...result });
+      rows = await placesInBbox(bbox);
+    } catch (err) {
+      run.warn(`Catalog skipped: ${err instanceof Error ? err.message : 'error'}`);
+    }
+  }
 
   const assessedIds = rows.filter((p) => p.assessedAt != null).map((p) => p.id);
   const scores = await assessPlaces(assessedIds);
