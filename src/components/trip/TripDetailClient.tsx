@@ -100,11 +100,13 @@ export default function TripDetailClient({ trip }: { trip: TripDetail }) {
     }
   }
 
-  async function addStop(location: string) {
+  async function addStop(location: string, placeId?: string) {
     const res = await fetch(`/api/trips/${trip.id}/nodes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location }),
+      // A place_id (from autocomplete) resolves to exact coords server-side;
+      // free text falls back to geocoding the string.
+      body: JSON.stringify(placeId ? { placeId, label: location } : { location }),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };

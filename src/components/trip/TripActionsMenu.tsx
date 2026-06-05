@@ -46,8 +46,15 @@ export default function TripActionsMenu({
     if (!window.confirm(`Delete "${name}"? This removes its stops and saved places.`)) return;
     setBusy(true);
     const res = await fetch(`/api/trips/${tripId}`, { method: 'DELETE' });
-    if (res.ok) router.push('/trips');
-    else setBusy(false);
+    if (res.ok) {
+      // Navigate to the list, then invalidate the router cache so neither the
+      // stale /trips payload nor this (now-deleted) trip page is replayed from
+      // cache — without refresh the deleted trip flickers back on Back/refresh.
+      router.replace('/trips');
+      router.refresh();
+    } else {
+      setBusy(false);
+    }
   }
 
   return (

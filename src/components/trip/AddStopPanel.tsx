@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/kit/Icon';
 
 const SUGGESTED: { name: string; state: string }[] = [
@@ -12,29 +12,58 @@ const SUGGESTED: { name: string; state: string }[] = [
   { name: 'Truckee', state: 'CA' },
 ];
 
+type Suggestion = { placeId: string; primaryText: string; secondaryText?: string };
+
 // Inline add-stop affordance: a dashed pin + button that expands to a search
-// field plus suggested-town chips. `onAdd` geocodes the location server-side.
+// field with live Google typeahead plus suggested-town chips. `onAdd` takes the
+// resolved location and an optional place_id (exact coords server-side).
 export default function AddStopPanel({
   existingNames,
   onAdd,
 }: {
   existingNames: string[];
-  onAdd: (location: string) => Promise<void>;
+  onAdd: (location: string, placeId?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  // One Google Autocomplete session token per add-stop session (billing).
+  const tokenRef = useRef<string>(typeof crypto !== 'undefined' ? crypto.randomUUID() : 'tok');
 
   const taken = new Set(existingNames.map((n) => n.toLowerCase()));
   const avail = SUGGESTED.filter((s) => !taken.has(s.name.toLowerCase()));
 
-  async function add(location: string) {
+  // Debounced Google typeahead, mirroring the Discover search box.
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/search/autocomplete?q=${encodeURIComponent(text)}&token=${tokenRef.current}`,
+        );
+        if (res.ok) setSuggestions((await res.json()) as Suggestion[]);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 220);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function add(location: string, placeId?: string) {
     if (!location.trim() || busy) return;
     setBusy(true);
     try {
-      await onAdd(location.trim());
+      await onAdd(location.trim(), placeId);
       setQuery('');
+      setSuggestions([]);
       setOpen(false);
+      // Fresh session token for the next add.
+      tokenRef.current = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'tok';
     } finally {
       setBusy(false);
     }
@@ -89,21 +118,67 @@ export default function AddStopPanel({
                 <Icon name="x" size={15} color="var(--muted)" />
               </button>
             </div>
-            <div className="input-wrap" style={{ marginBottom: 14 }}>
-              <span className="input-ic">
-                <Icon name="search" size={17} color="var(--muted)" />
-              </span>
-              <input
-                className="input"
-                placeholder="Search for a town or city…"
-                value={query}
-                disabled={busy}
-                autoFocus
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') add(query);
-                }}
-              />
+            <div style={{ position: 'relative', marginBottom: 14 }}>
+              <div className="input-wrap">
+                <span className="input-ic">
+                  <Icon name="search" size={17} color="var(--muted)" />
+                </span>
+                <input
+                  className="input"
+                  placeholder="Search for a town or city…"
+                  value={query}
+                  disabled={busy}
+                  autoFocus
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') add(query);
+                  }}
+                />
+              </div>
+              {suggestions.length > 0 && (
+                <div
+                  className="card"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: 'calc(100% + 6px)',
+                    zIndex: 20,
+                    padding: 6,
+                    boxShadow: 'var(--sh-pop)',
+                  }}
+                >
+                  {suggestions.slice(0, 6).map((s) => (
+                    <button
+                      key={s.placeId}
+                      disabled={busy}
+                      onClick={() => add(s.primaryText, s.placeId)}
+                      className="row g10 center"
+                      style={suggestRow}
+                    >
+                      <Icon name="pin" size={16} color="var(--green-700)" />
+                      <span className="col" style={{ alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{s.primaryText}</span>
+                        {s.secondaryText && (
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              color: 'var(--muted)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {s.secondaryText}
+                          </span>
+                        )}
+                      </span>
+                      <span className="grow" />
+                      <Icon name="plus" size={14} color="var(--green-700)" stroke={2} />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="label" style={{ marginBottom: 10 }}>
               {busy ? 'Adding stop…' : 'Suggested for dog travel'}
@@ -134,3 +209,13 @@ export default function AddStopPanel({
     </div>
   );
 }
+
+const suggestRow: React.CSSProperties = {
+  width: '100%',
+  border: 'none',
+  background: 'transparent',
+  cursor: 'pointer',
+  padding: '9px 11px',
+  borderRadius: 10,
+  textAlign: 'left',
+};
