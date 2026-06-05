@@ -37,10 +37,11 @@ function trustOf(source: Signal['source']): number {
   return source ? SOURCE_TRUST[source] ?? 1.0 : 1.0;
 }
 
-// Direction a signal pushes the dog-friendliness score, in [-1, 1]. Confidence
-// (how sure we are the signal is true) is applied separately — polarity is
-// purely about meaning. Without this, a confident "no dogs allowed" would raise
-// the score just like any other evidence; here it subtracts.
+// Direction (and relative magnitude) a signal pushes the dog-friendliness score,
+// in [-1, 1]. Confidence (how sure we are the signal is true) is applied
+// separately. The aggregator is ADDITIVE (see score()), so a small positive like
+// a pet fee only ever nudges the score up — it can never drag down a strong
+// "dogs welcome", which was the flaw in the old averaging model.
 export function signalPolarity(category: string, value: SignalValue): number {
   switch (category) {
     case 'pets_allowed':
@@ -54,15 +55,25 @@ export function signalPolarity(category: string, value: SignalValue): number {
       // Dogs are welcome (leashed, or off-leash when false) — positive either way.
       return value === false ? 1 : 0.8;
     case 'pet_fee':
-      // Pets are accommodated, but a fee applies — mildly positive.
-      return 0.2;
+      // A pet fee CONFIRMS the place accommodates dogs — a mild positive that
+      // adds to the evidence; it must never reduce the score.
+      return 0.35;
     case 'size_restriction':
-      // A restriction on which dogs are allowed — negative.
+      // A restriction on which dogs are allowed — moderate negative.
       return -0.5;
     default:
       return 1;
   }
 }
+
+// Aggregation tuning ----------------------------------------------------------
+// PRIOR: with no evidence the score is 0; evidence (P) must accumulate past this
+// before the score climbs, so a single thin tag stays modest while a strong
+// authoritative claim (or several corroborating ones) reaches the 80s–90s.
+const PRIOR = 0.55;
+// Within ONE category, extra signals corroborate but with diminishing returns,
+// so a pile of low-trust reviews can't outweigh one authoritative source.
+const DIMINISH = 0.6;
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -85,54 +96,68 @@ export function score(
     };
   }
 
-  // Per-category accumulation, polarity- and source-aware. Each signal's
-  // EFFECTIVE weight is its category weight × its source-trust multiplier, so a
-  // claim from the official website counts for more than the same claim from a
-  // single review. `weightedSignedSum` is Σ(polarity × confidence × effWeight)
-  // within the category; its net contribution to `base` is that sum / totalWeight.
+  // ADDITIVE evidence model. Each signal yields "evidence points":
+  //   points = |polarity| × confidence × categoryWeight × sourceTrust
+  // routed to a POSITIVE pool (P) or NEGATIVE pool (N) by the polarity's sign.
+  // Within a category we sort by magnitude and apply diminishing returns, so the
+  // first (strongest) signal counts fully and extras corroborate with less pull.
+  // The score is the share of positive evidence: P / (P + N + PRIOR). This means
+  //   • more positive evidence only ever RAISES the score (a pet fee nudges up);
+  //   • a confident "no dogs" loads N heavily and drives the score toward 0;
+  //   • thin evidence stays modest because PRIOR holds the score down until it
+  //     accumulates.
   const groups = new Map<
     SignalCategory,
-    { effWeightSum: number; weightedSignedSum: number; signedSum: number; confSum: number; count: number }
+    { pos: number[]; neg: number[]; confSum: number; count: number; net: number }
   >();
-  let weightedSigned = 0;
-  let totalWeight = 0;
 
   for (const signal of signals) {
-    const effWeight = (CATEGORY_WEIGHTS[signal.category] ?? 1.0) * trustOf(signal.source);
     const polarity = signalPolarity(signal.category, signal.value);
-    const signed = polarity * signal.confidence;
-    weightedSigned += signed * effWeight;
-    totalWeight += effWeight;
+    const magnitude =
+      Math.abs(polarity) *
+      signal.confidence *
+      (CATEGORY_WEIGHTS[signal.category] ?? 1.0) *
+      trustOf(signal.source);
 
     const g =
-      groups.get(signal.category) ??
-      { effWeightSum: 0, weightedSignedSum: 0, signedSum: 0, confSum: 0, count: 0 };
-    g.effWeightSum += effWeight;
-    g.weightedSignedSum += signed * effWeight;
-    g.signedSum += signed;
+      groups.get(signal.category) ?? { pos: [], neg: [], confSum: 0, count: 0, net: 0 };
+    if (polarity < 0) g.neg.push(magnitude);
+    else g.pos.push(magnitude);
     g.confSum += signal.confidence;
     g.count += 1;
     groups.set(signal.category, g);
   }
 
-  // Net friendliness before boost, clamped into [0, 1]. All-positive evidence
-  // reduces to the previous confidence-weighted average; negatives subtract.
-  const baseRaw = weightedSigned / totalWeight;
-  const base = clamp01(baseRaw);
+  // Sum a pool with diminishing returns (strongest first).
+  const dimSum = (vals: number[]): number =>
+    vals
+      .slice()
+      .sort((a, b) => b - a)
+      .reduce((sum, v, i) => sum + v * Math.pow(DIMINISH, i), 0);
 
-  // Corroborating sources add confidence — but only to an already-positive
-  // assessment; they should never lift a "not allowed" toward friendly.
-  const sourceBoost = base > 0 ? Math.min(0.1 * (sourcesConsulted.length - 1), 0.2) : 0;
-  const confidence = round2(clamp01(base + sourceBoost));
+  let P = 0;
+  let N = 0;
+  for (const g of groups.values()) {
+    const pCat = dimSum(g.pos);
+    const nCat = dimSum(g.neg);
+    g.net = pCat - nCat;
+    P += pCat;
+    N += nCat;
+  }
+
+  const denom = P + N + PRIOR;
+  const base = denom > 0 ? clamp01(P / denom) : 0;
+  const confidence = round2(base);
 
   const contributions: ScoreContribution[] = [...groups.entries()]
     .map(([category, g]) => ({
       category,
       signalCount: g.count,
-      weight: round2(g.effWeightSum),
+      weight: round2(dimSum(g.pos) + dimSum(g.neg)),
       averageConfidence: round2(g.confSum / g.count),
-      contribution: round2(g.weightedSignedSum / totalWeight),
-      polarity: Math.sign(g.signedSum),
+      // Share of the final score this category accounts for (signed).
+      contribution: round2(g.net / denom),
+      polarity: Math.sign(g.net),
     }))
     .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
 
@@ -145,7 +170,9 @@ export function score(
     breakdown: {
       signalCount: signals.length,
       base: round2(base),
-      sourceBoost: round2(sourceBoost),
+      // Retained for the breakdown shape; corroboration is now intrinsic to the
+      // additive model (extra sources add evidence points), not a separate bonus.
+      sourceBoost: 0,
       contributions,
     },
   };
