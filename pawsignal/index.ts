@@ -15,4 +15,6 @@ export type {
 export { normalize, registerAdapter } from './normalize/index';
 export { extract, registerExtractor } from './extract/index';
 export { osmExtractor } from './extract/osm';
+export { websiteExtractor, matchPetPolicy } from './extract/website';
+export type { PolicyClaim } from './extract/website';
 export { score, signalPolarity } from './score/index';

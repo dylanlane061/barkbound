@@ -18,6 +18,25 @@ const CATEGORY_WEIGHTS: Record<string, number> = {
   trail_access: 0.8,
 };
 
+// How much to trust a signal based on WHO said it. A place's own website is the
+// most authoritative statement of its pet policy; official agencies rank high;
+// individual reviews are noisy and crowd-sourced map tags are middling. Applied
+// multiplicatively to the category weight, so an official-site claim pulls far
+// harder than the same claim from a single review. Unknown sources stay neutral.
+const SOURCE_TRUST: Record<string, number> = {
+  website: 1.6,
+  nps: 1.3,
+  recreation_gov: 1.3,
+  google: 1.2,
+  osm: 1.0,
+  user_import: 0.9,
+  google_reviews: 0.8,
+};
+
+function trustOf(source: Signal['source']): number {
+  return source ? SOURCE_TRUST[source] ?? 1.0 : 1.0;
+}
+
 // Direction a signal pushes the dog-friendliness score, in [-1, 1]. Confidence
 // (how sure we are the signal is true) is applied separately — polarity is
 // purely about meaning. Without this, a confident "no dogs allowed" would raise
@@ -66,24 +85,31 @@ export function score(
     };
   }
 
-  // Per-category accumulation, now polarity-aware. `signedSum` is the sum of
-  // (polarity × confidence) within the category (per unit weight); the
-  // category's net contribution to `base` is weight × signedSum / totalWeight.
+  // Per-category accumulation, polarity- and source-aware. Each signal's
+  // EFFECTIVE weight is its category weight × its source-trust multiplier, so a
+  // claim from the official website counts for more than the same claim from a
+  // single review. `weightedSignedSum` is Σ(polarity × confidence × effWeight)
+  // within the category; its net contribution to `base` is that sum / totalWeight.
   const groups = new Map<
     SignalCategory,
-    { weight: number; signedSum: number; confSum: number; count: number }
+    { effWeightSum: number; weightedSignedSum: number; signedSum: number; confSum: number; count: number }
   >();
   let weightedSigned = 0;
   let totalWeight = 0;
 
   for (const signal of signals) {
-    const weight = CATEGORY_WEIGHTS[signal.category] ?? 1.0;
+    const effWeight = (CATEGORY_WEIGHTS[signal.category] ?? 1.0) * trustOf(signal.source);
     const polarity = signalPolarity(signal.category, signal.value);
-    weightedSigned += polarity * signal.confidence * weight;
-    totalWeight += weight;
+    const signed = polarity * signal.confidence;
+    weightedSigned += signed * effWeight;
+    totalWeight += effWeight;
 
-    const g = groups.get(signal.category) ?? { weight, signedSum: 0, confSum: 0, count: 0 };
-    g.signedSum += polarity * signal.confidence;
+    const g =
+      groups.get(signal.category) ??
+      { effWeightSum: 0, weightedSignedSum: 0, signedSum: 0, confSum: 0, count: 0 };
+    g.effWeightSum += effWeight;
+    g.weightedSignedSum += signed * effWeight;
+    g.signedSum += signed;
     g.confSum += signal.confidence;
     g.count += 1;
     groups.set(signal.category, g);
@@ -103,9 +129,9 @@ export function score(
     .map(([category, g]) => ({
       category,
       signalCount: g.count,
-      weight: g.weight,
+      weight: round2(g.effWeightSum),
       averageConfidence: round2(g.confSum / g.count),
-      contribution: round2((g.weight * g.signedSum) / totalWeight),
+      contribution: round2(g.weightedSignedSum / totalWeight),
       polarity: Math.sign(g.signedSum),
     }))
     .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
