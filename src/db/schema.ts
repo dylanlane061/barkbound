@@ -121,3 +121,18 @@ export const tripPlaces = sqliteTable('trip_places', {
     .notNull(),
   notes: text('notes'),
 });
+
+// Records each Google catalog fan-out: where it was centered, how wide, and
+// when. Discover consults this to decide whether an area was catalogued
+// recently (covering the search point) before re-running — a reliable per-area
+// freshness signal that doesn't depend on per-place timestamps.
+export const catalogRuns = sqliteTable('catalog_runs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  latitude: real('latitude').notNull(),
+  longitude: real('longitude').notNull(),
+  radiusMiles: real('radius_miles').notNull(),
+  resultCount: integer('result_count').notNull().default(0),
+  catalogedAt: integer('cataloged_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
+});

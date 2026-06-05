@@ -7,6 +7,7 @@ import { catalogArea } from '@/ingest/catalog';
 import { getPlaceDetails } from '@/ingest/google';
 import { startRun } from '@/lib/pipeline';
 import { getSaveTargets, resolveCurrentTrip, type SaveTargetTrip } from '@/lib/current-trip';
+import { hasRecentCatalog, recordCatalogRun } from '@/lib/catalog-coverage';
 import type { CatKey } from '@/lib/design/cats';
 import type { ConfTier } from '@/lib/design/confidence';
 
@@ -16,13 +17,6 @@ const MAX_LOAD_MILES = 50;
 // Google Nearby caps radius at 50km (~31mi), so the on-search catalog covers
 // up to that; the display radius can still reach 50mi for already-known places.
 const CATALOG_RADIUS_MILES = 31;
-// A fan-out catalog stamps lastIngestedAt on dozens of places at once. If fewer
-// than this many places in range were stamped recently, the area is treated as
-// uncovered (a new city, or one last covered before the per-type fan-out) and
-// we re-catalog. The count (not "any") guards against a stray recently-assessed
-// place making a thin area look covered.
-const CATALOG_FRESH_DAYS = 7;
-const MIN_FRESH_PLACES = 10;
 // Type fan-out for the catalog — broad enough to cover the design's categories
 // (trails/dog parks/breweries included). Each is one Nearby call.
 const DISCOVER_CATALOG_TYPES = [
@@ -139,15 +133,10 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
   const bbox = radiusToBbox(lat, lon, MAX_LOAD_MILES);
   let rows = await placesInBbox(bbox);
 
-  // Catalog-on-search: if no nearby place was catalogued recently (a brand-new
-  // city, or one last covered before the per-type fan-out), pull a fresh
-  // catalog from Google and re-query. Best-effort — without a Google key it
-  // simply returns whatever is already known.
-  const freshCutoff = Date.now() - CATALOG_FRESH_DAYS * 86_400_000;
-  const freshCount = rows.filter(
-    (r) => r.lastIngestedAt != null && new Date(r.lastIngestedAt).getTime() > freshCutoff,
-  ).length;
-  if (freshCount < MIN_FRESH_PLACES) {
+  // Catalog-on-search: if no recent catalog run already covers this point, pull
+  // a fresh fan-out catalog from Google, record the run, and re-query.
+  // Best-effort — without a Google key it returns whatever is already known.
+  if (!(await hasRecentCatalog(lat, lon))) {
     const run = startRun(`Catalog ${q.location}`);
     try {
       const result = await catalogArea(
@@ -159,6 +148,7 @@ export async function getDiscoverData(q: DiscoverQuery): Promise<DiscoverData | 
         },
         run,
       );
+      await recordCatalogRun(lat, lon, CATALOG_RADIUS_MILES, result.catalogued);
       run.done('Catalogued on search', { ...result });
       rows = await placesInBbox(bbox);
     } catch (err) {
