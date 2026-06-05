@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { places, rawRecords, signals } from '@/db/schema';
 import { haversineMiles, radiusToBbox, type BoundingBox } from '@/ingest/geo';
 import { getPlaceDetails } from '@/ingest/google';
+import { fetchWebsiteText } from '@/lib/content/website';
 import { assessPlaces, type PlaceScore } from '@/lib/assess';
 
 // On-demand per-place assessment (ROADMAP Phase 1.5c). Collects real OSM
@@ -67,7 +68,9 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
   await db.delete(signals).where(eq(signals.placeId, placeId));
   await db
     .delete(rawRecords)
-    .where(and(eq(rawRecords.placeId, placeId), inArray(rawRecords.source, ['osm', 'google'])));
+    .where(
+      and(eq(rawRecords.placeId, placeId), inArray(rawRecords.source, ['osm', 'google', 'website'])),
+    );
 
   let evidenceFound = 0;
 
@@ -137,37 +140,79 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
     }
   }
 
-  // Google live signal: add Google's allowsDogs attribute as a second source.
-  // score() is now polarity-aware, so we persist both the positive and negative
-  // cases (a confident "no dogs" lowers the score). We store only the derived
-  // boolean (not Google's full payload). allowsDogs uses the canonical Google
-  // place_id stored in external_id.
+  // Google-backed sources: the live allowsDogs attribute, plus the place's
+  // official website (mined for an authoritative pet policy). Both hang off the
+  // canonical Google place_id stored in external_id. One Details call serves both.
   if (place.externalId && place.canonicalSource === 'google') {
+    let details: Awaited<ReturnType<typeof getPlaceDetails>> | null = null;
     try {
-      const details = await getPlaceDetails(place.externalId);
-      if (details.allowsDogs === true || details.allowsDogs === false) {
-        const allowed = details.allowsDogs;
-        const [raw] = await db
-          .insert(rawRecords)
-          .values({
-            placeId,
-            source: 'google',
-            sourceEntityId: place.externalId,
-            raw: { allowsDogs: allowed, note: 'Google Place attribute (derived, live read)' },
-            fetchedAt: new Date(),
-          })
-          .returning({ id: rawRecords.id });
-        await db.insert(signals).values({
-          placeId,
-          category: 'pets_allowed',
-          value: allowed,
-          confidence: 0.75,
-          evidenceIds: [raw.id],
-        });
-        evidenceFound += 1;
-      }
+      details = await getPlaceDetails(place.externalId);
     } catch {
-      // Missing/invalid place_id or API error — skip the Google signal.
+      // Missing/invalid place_id or API error — skip the Google-backed sources.
+    }
+
+    // (a) Google allowsDogs attribute. score() is polarity-aware, so we persist
+    // both the positive and negative cases (a confident "no dogs" lowers the
+    // score). We store only the derived boolean, not Google's full payload.
+    if (details && (details.allowsDogs === true || details.allowsDogs === false)) {
+      const allowed = details.allowsDogs;
+      const [raw] = await db
+        .insert(rawRecords)
+        .values({
+          placeId,
+          source: 'google',
+          sourceEntityId: place.externalId,
+          raw: { allowsDogs: allowed, note: 'Google Place attribute (derived, live read)' },
+          fetchedAt: new Date(),
+        })
+        .returning({ id: rawRecords.id });
+      await db.insert(signals).values({
+        placeId,
+        category: 'pets_allowed',
+        value: allowed,
+        confidence: 0.75,
+        evidenceIds: [raw.id],
+      });
+      evidenceFound += 1;
+    }
+
+    // (b) Official website: the most authoritative statement of a place's pet
+    // policy (weighted highest in score()). We fetch + clean in src/, then let
+    // PawSignal's pure matcher extract claims — each stored with its verbatim
+    // quote so the evidence chain stays traceable. No claims ⇒ no signal.
+    if (details?.websiteUri) {
+      try {
+        const digest = await fetchWebsiteText(details.websiteUri);
+        if (digest && digest.claims.length > 0) {
+          const [raw] = await db
+            .insert(rawRecords)
+            .values({
+              placeId,
+              source: 'website',
+              sourceEntityId: digest.url,
+              raw: {
+                url: digest.url,
+                pagesFetched: digest.pagesFetched,
+                claims: digest.claims,
+                note: 'Pet-policy claims mined from the official website',
+              },
+              fetchedAt: new Date(),
+            })
+            .returning({ id: rawRecords.id });
+          await db.insert(signals).values(
+            digest.claims.map((c) => ({
+              placeId,
+              category: c.category,
+              value: c.value,
+              confidence: c.confidence,
+              evidenceIds: [raw.id],
+            })),
+          );
+          evidenceFound += digest.claims.length;
+        }
+      } catch {
+        // Network/parse failure — skip the website signal, keep the assessment.
+      }
     }
   }
 

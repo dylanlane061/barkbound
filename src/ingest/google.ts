@@ -47,9 +47,11 @@ export interface CanonicalPlace {
   types: string[];
 }
 
-// Place Details adds the live, read-time dog signal (not persisted as evidence).
+// Place Details adds the live, read-time dog signal (not persisted as evidence)
+// plus the place's official website (mined for an authoritative pet policy).
 export interface PlaceDetails extends CanonicalPlace {
   allowsDogs: boolean | null;
+  websiteUri: string | null;
 }
 
 function apiKey(): string {
@@ -102,6 +104,7 @@ interface RawPlace {
   primaryType?: string;
   types?: string[];
   allowsDogs?: boolean;
+  websiteUri?: string;
 }
 
 function toCanonical(p: RawPlace): CanonicalPlace {
@@ -206,8 +209,8 @@ export async function getPlaceDetails(
   const query = sessionToken ? `?sessionToken=${encodeURIComponent(sessionToken)}` : '';
   const p = await googleFetch<RawPlace>(`/places/${encodeURIComponent(placeId)}${query}`, {
     method: 'GET',
-    fieldMask: 'id,displayName,location,formattedAddress,types,allowsDogs',
+    fieldMask: 'id,displayName,location,formattedAddress,types,allowsDogs,websiteUri',
   });
 
-  return { ...toCanonical(p), allowsDogs: p.allowsDogs ?? null };
+  return { ...toCanonical(p), allowsDogs: p.allowsDogs ?? null, websiteUri: p.websiteUri ?? null };
 }

@@ -65,6 +65,23 @@ export default function EvidenceRow({
       </button>
       {open && (
         <div style={{ padding: '0 10px 16px 61px' }}>
+          {e.quote && (
+            <blockquote
+              style={{
+                margin: '0 0 10px',
+                padding: '10px 14px',
+                borderLeft: '3px solid var(--green-700)',
+                background: 'var(--green-tint-2)',
+                borderRadius: 8,
+                fontSize: 13,
+                fontStyle: 'italic',
+                color: 'var(--green-900)',
+                lineHeight: 1.45,
+              }}
+            >
+              &ldquo;{e.quote}&rdquo;
+            </blockquote>
+          )}
           <div
             className="mono"
             style={{

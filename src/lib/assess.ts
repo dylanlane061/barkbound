@@ -47,13 +47,24 @@ export async function assessPlaces(placeIds: string[]): Promise<Map<string, Plac
   const result = new Map<string, PlaceScore>();
   if (placeIds.length === 0) return result;
 
-  const [sigRows, sourceRows] = await Promise.all([
+  const [sigRows, rawRows] = await Promise.all([
     db.select().from(signalsTable).where(inArray(signalsTable.placeId, placeIds)),
     db
-      .selectDistinct({ placeId: rawRecords.placeId, source: rawRecords.source })
+      .select({ id: rawRecords.id, placeId: rawRecords.placeId, source: rawRecords.source })
       .from(rawRecords)
       .where(inArray(rawRecords.placeId, placeIds)),
   ]);
+
+  // Map each raw record to its source so we can stamp every signal with the
+  // source that produced it — score() weights by source authority (website ≫
+  // review). Also collect the distinct sources per place for corroboration.
+  const sourceByRawId = new Map(rawRows.map((r) => [r.id, r.source]));
+  const sourcesByPlace = new Map<string, string[]>();
+  for (const r of rawRows) {
+    const list = sourcesByPlace.get(r.placeId) ?? [];
+    if (!list.includes(r.source)) list.push(r.source);
+    sourcesByPlace.set(r.placeId, list);
+  }
 
   const byPlace = new Map<string, Signal[]>();
   for (const s of sigRows) {
@@ -66,15 +77,9 @@ export async function assessPlaces(placeIds: string[]): Promise<Map<string, Plac
       confidence: s.confidence,
       evidenceIds: s.evidenceIds,
       extractedAt: s.extractedAt,
+      source: (sourceByRawId.get(s.evidenceIds[0]) as Signal['source']) ?? undefined,
     });
     byPlace.set(s.placeId, list);
-  }
-
-  const sourcesByPlace = new Map<string, string[]>();
-  for (const r of sourceRows) {
-    const list = sourcesByPlace.get(r.placeId) ?? [];
-    list.push(r.source);
-    sourcesByPlace.set(r.placeId, list);
   }
 
   for (const [placeId, sigs] of byPlace) {

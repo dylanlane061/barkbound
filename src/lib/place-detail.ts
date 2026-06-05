@@ -10,6 +10,8 @@ import type { CatKey } from '@/lib/design/cats';
 const SOURCE_LABEL: Record<string, string> = {
   osm: 'OpenStreetMap',
   google: 'Google',
+  google_reviews: 'Google reviews',
+  website: 'Official website',
   nps: 'National Park Service',
   recreation_gov: 'Recreation.gov',
   user_import: 'User report',
@@ -55,6 +57,7 @@ export type EvidenceRow = {
   confidence: number; // 0–1
   tier: ConfTier;
   negative: boolean; // true when this signal lowers the score
+  quote: string | null; // verbatim supporting text (e.g. the website sentence)
   raw: unknown; // the raw_record payload behind this signal
 };
 
@@ -90,6 +93,8 @@ export async function getPlaceDetail(
     db.select().from(rawRecords).where(eq(rawRecords.placeId, id)),
   ]);
 
+  const rawById = new Map(rawRows.map((r) => [r.id, r]));
+
   const typedSignals: Signal[] = sigRows.map((s) => ({
     id: s.id,
     placeId: s.placeId,
@@ -98,13 +103,13 @@ export async function getPlaceDetail(
     confidence: s.confidence,
     evidenceIds: s.evidenceIds,
     extractedAt: s.extractedAt,
+    // Stamp the producing source so score() can weight by source authority.
+    source: (rawById.get(s.evidenceIds[0])?.source as Signal['source']) ?? undefined,
   }));
 
   const sources = [...new Set(rawRows.map((r) => r.source))];
   const assessment = score(id, typedSignals, sources as SourceId[]);
   const scoreVal = toScore100(assessment.confidence);
-
-  const rawById = new Map(rawRows.map((r) => [r.id, r]));
 
   // One evidence row per signal, strongest first. Negative-polarity signals
   // (e.g. "no dogs allowed") are shown as score-lowering and tinted low (red),
@@ -116,6 +121,11 @@ export async function getPlaceDetail(
       const valueDetail =
         typeof s.value === 'string' && s.value && s.value !== 'true' ? s.value : null;
       const negative = signalPolarity(s.category, s.value) < 0;
+      // Pull the verbatim supporting sentence for source types that store one
+      // (the website matcher records a `quote` per claim).
+      const claimsRaw = (raw?.raw as { claims?: { category: string; quote?: string }[] } | undefined)
+        ?.claims;
+      const quote = claimsRaw?.find((c) => c.category === s.category)?.quote ?? null;
       return {
         id: s.id,
         source: sourceId,
@@ -125,6 +135,7 @@ export async function getPlaceDetail(
         confidence: s.confidence,
         tier: negative ? 'lo' : confOf(toScore100(s.confidence)),
         negative,
+        quote,
         raw: raw?.raw ?? null,
       } satisfies EvidenceRow;
     })
