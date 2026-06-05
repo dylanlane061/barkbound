@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from '@/components/kit/Icon';
 import type { SaveTargetTrip } from '@/lib/current-trip';
 
 type Variant = 'icon' | 'ghost' | 'primary';
+
+const MENU_WIDTH = 260;
 
 // Bookmark trigger + a "Save to… (trip ▸ stop)" popover. Lets the user choose
 // which trip and which stop to save a place under, instead of silently using
@@ -23,12 +26,39 @@ export default function SaveButton({
   onPick: (tripId: string, nodeId: string | null, tripName: string, stopLabel: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null); // trigger wrapper
+  const popRef = useRef<HTMLDivElement>(null); // portalled popover
+
+  // Anchor the (portalled) popover to the trigger in viewport coords, clamped to
+  // the viewport so it never spills off-screen.
+  const reposition = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
+    setPos({ top: r.bottom + 8, left });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+    // Keep it pinned to the trigger as the page scrolls/resizes.
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [open, reposition]);
 
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      // The popover lives in a portal, so check it explicitly too.
+      if (ref.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -79,16 +109,20 @@ export default function SaveButton({
   return (
     <div style={{ position: 'relative' }} ref={ref}>
       {trigger}
-      {open && (
+      {open &&
+        pos &&
+        typeof document !== 'undefined' &&
+        createPortal(
         <div
+          ref={popRef}
           className="card scroll"
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            zIndex: 80,
-            width: 260,
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            zIndex: 1000,
+            width: MENU_WIDTH,
             maxHeight: 340,
             overflowY: 'auto',
             boxShadow: 'var(--sh-lg)',
@@ -134,8 +168,9 @@ export default function SaveButton({
               </div>
             ))
           )}
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
