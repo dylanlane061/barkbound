@@ -28,6 +28,15 @@ const CATEGORY_REASON: Record<string, string> = {
   pet_fee: 'Pet fee applies',
   size_restriction: 'Size restrictions apply',
 };
+const NEGATIVE_REASON: Record<string, string> = {
+  pets_allowed: 'Dogs not allowed',
+  size_restriction: 'Dog size restrictions',
+};
+
+function reasonFor(category: string, polarity: number): string {
+  if (polarity < 0) return NEGATIVE_REASON[category] ?? 'Limited dog access';
+  return CATEGORY_REASON[category] ?? 'Dog-friendly signals found';
+}
 
 // Bulk-score a set of places from their stored signals + sources. Loading
 // signals and sources in two `IN (...)` queries (instead of per-place) keeps the
@@ -72,14 +81,14 @@ export async function assessPlaces(placeIds: string[]): Promise<Map<string, Plac
     const sources = sourcesByPlace.get(placeId) ?? [];
     const assessment = score(placeId, sigs, sources as SourceId[]);
     const s = toScore100(assessment.confidence);
-    const topCategory = assessment.breakdown.contributions[0]?.category;
+    const top = assessment.breakdown.contributions[0];
     result.set(placeId, {
       score: s,
       confidence: assessment.confidence,
       tier: confOf(s),
       signalCount: sigs.length,
       sources,
-      reason: (topCategory && CATEGORY_REASON[topCategory]) || 'Dog-friendly signals found',
+      reason: top ? reasonFor(top.category, top.polarity) : 'Dog-friendly signals found',
     });
   }
 

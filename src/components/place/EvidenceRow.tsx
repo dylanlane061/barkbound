@@ -58,6 +58,7 @@ export default function EvidenceRow({
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
             {e.sourceLabel} · {toScore100(e.confidence)}% signal confidence
+            {e.negative && <span style={{ color: 'var(--lo)', fontWeight: 600 }}> · lowers score</span>}
           </div>
         </div>
         <Conf level={e.tier} small />

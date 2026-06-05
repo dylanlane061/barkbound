@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { score } from '@pawsignal';
+import { score, signalPolarity } from '@pawsignal';
 import type { Signal, SourceId } from '@pawsignal';
 import { db } from '@/db/client';
 import { places, rawRecords, signals as signalsTable, tripNodes, trips } from '@/db/schema';
@@ -26,6 +26,12 @@ const CLAIM: Record<string, string> = {
   size_restriction: 'Dog size restrictions apply',
 };
 
+// Claim phrasing for negative-polarity signals.
+const NEGATIVE_CLAIM: Record<string, string> = {
+  pets_allowed: 'Dogs are not allowed here',
+  size_restriction: 'Dog size restrictions apply',
+};
+
 const TAG: Record<string, string> = {
   pets_allowed: 'Dogs allowed',
   designated_area: 'Designated dog area',
@@ -33,6 +39,10 @@ const TAG: Record<string, string> = {
   water_access: 'Water access',
   trail_access: 'Trail access',
   pet_fee: 'Pet fee',
+  size_restriction: 'Size limits',
+};
+const NEGATIVE_TAG: Record<string, string> = {
+  pets_allowed: 'No dogs',
   size_restriction: 'Size limits',
 };
 
@@ -44,6 +54,7 @@ export type EvidenceRow = {
   detail: string | null;
   confidence: number; // 0–1
   tier: ConfTier;
+  negative: boolean; // true when this signal lowers the score
   raw: unknown; // the raw_record payload behind this signal
 };
 
@@ -95,27 +106,37 @@ export async function getPlaceDetail(
 
   const rawById = new Map(rawRows.map((r) => [r.id, r]));
 
-  // One evidence row per signal, strongest first.
+  // One evidence row per signal, strongest first. Negative-polarity signals
+  // (e.g. "no dogs allowed") are shown as score-lowering and tinted low (red),
+  // not green, regardless of how confident the signal is.
   const evidence: EvidenceRow[] = typedSignals
     .map((s) => {
       const raw = s.evidenceIds.map((eid) => rawById.get(eid)).find(Boolean);
       const sourceId = raw?.source ?? sources[0] ?? 'osm';
       const valueDetail =
         typeof s.value === 'string' && s.value && s.value !== 'true' ? s.value : null;
+      const negative = signalPolarity(s.category, s.value) < 0;
       return {
         id: s.id,
         source: sourceId,
         sourceLabel: SOURCE_LABEL[sourceId] ?? sourceId,
-        claim: CLAIM[s.category] ?? s.category,
+        claim: negative ? NEGATIVE_CLAIM[s.category] ?? CLAIM[s.category] ?? s.category : CLAIM[s.category] ?? s.category,
         detail: valueDetail,
         confidence: s.confidence,
-        tier: confOf(toScore100(s.confidence)),
+        tier: negative ? 'lo' : confOf(toScore100(s.confidence)),
+        negative,
         raw: raw?.raw ?? null,
       } satisfies EvidenceRow;
     })
     .sort((a, b) => b.confidence - a.confidence);
 
-  const tags = [...new Set(typedSignals.map((s) => TAG[s.category]).filter(Boolean))].slice(0, 5);
+  const tags = [
+    ...new Set(
+      typedSignals
+        .map((s) => (signalPolarity(s.category, s.value) < 0 ? NEGATIVE_TAG[s.category] : TAG[s.category]))
+        .filter(Boolean),
+    ),
+  ].slice(0, 5);
 
   // Save target + breadcrumb.
   let saveTarget: PlaceDetail['saveTarget'] = null;

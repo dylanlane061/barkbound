@@ -137,30 +137,30 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
     }
   }
 
-  // Google live signal: if Google marks the place dog-friendly, add it as a
-  // second corroborating source. We persist only the derived boolean (not
-  // Google's full payload) and only the positive case — score() weights by
-  // evidence confidence and doesn't model negative polarity, so a confident
-  // "no dogs" would wrongly raise the score. allowsDogs uses the canonical
-  // Google place_id stored in external_id.
+  // Google live signal: add Google's allowsDogs attribute as a second source.
+  // score() is now polarity-aware, so we persist both the positive and negative
+  // cases (a confident "no dogs" lowers the score). We store only the derived
+  // boolean (not Google's full payload). allowsDogs uses the canonical Google
+  // place_id stored in external_id.
   if (place.externalId && place.canonicalSource === 'google') {
     try {
       const details = await getPlaceDetails(place.externalId);
-      if (details.allowsDogs === true) {
+      if (details.allowsDogs === true || details.allowsDogs === false) {
+        const allowed = details.allowsDogs;
         const [raw] = await db
           .insert(rawRecords)
           .values({
             placeId,
             source: 'google',
             sourceEntityId: place.externalId,
-            raw: { allowsDogs: true, note: 'Google Place attribute (derived, live read)' },
+            raw: { allowsDogs: allowed, note: 'Google Place attribute (derived, live read)' },
             fetchedAt: new Date(),
           })
           .returning({ id: rawRecords.id });
         await db.insert(signals).values({
           placeId,
           category: 'pets_allowed',
-          value: true,
+          value: allowed,
           confidence: 0.75,
           evidenceIds: [raw.id],
         });

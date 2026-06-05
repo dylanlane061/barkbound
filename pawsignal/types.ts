@@ -38,7 +38,8 @@ export interface ScoreContribution {
   signalCount: number;
   weight: number;                // the category weight applied
   averageConfidence: number;     // mean signal confidence within the category (0–1)
-  contribution: number;          // share of the pre-boost weighted average (0–1)
+  contribution: number;          // signed share of `base` (can be negative)
+  polarity: number;              // net direction for this category: + friendly, − unfriendly
 }
 
 // A transparent breakdown of how `confidence` was derived.

@@ -1,6 +1,7 @@
 import type {
   Signal,
   SignalCategory,
+  SignalValue,
   PlaceAssessment,
   ScoreContribution,
   SourceId,
@@ -17,7 +18,35 @@ const CATEGORY_WEIGHTS: Record<string, number> = {
   trail_access: 0.8,
 };
 
+// Direction a signal pushes the dog-friendliness score, in [-1, 1]. Confidence
+// (how sure we are the signal is true) is applied separately — polarity is
+// purely about meaning. Without this, a confident "no dogs allowed" would raise
+// the score just like any other evidence; here it subtracts.
+export function signalPolarity(category: string, value: SignalValue): number {
+  switch (category) {
+    case 'pets_allowed':
+      // Explicit negation is a strong negative; anything else affirms dogs.
+      return value === false || value === 'no' || value === 'none' || value === 'No' ? -1 : 1;
+    case 'designated_area':
+    case 'water_access':
+    case 'trail_access':
+      return 1;
+    case 'leash_required':
+      // Dogs are welcome (leashed, or off-leash when false) — positive either way.
+      return value === false ? 1 : 0.8;
+    case 'pet_fee':
+      // Pets are accommodated, but a fee applies — mildly positive.
+      return 0.2;
+    case 'size_restriction':
+      // A restriction on which dogs are allowed — negative.
+      return -0.5;
+    default:
+      return 1;
+  }
+}
+
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 export function score(
   placeId: string,
@@ -37,28 +66,38 @@ export function score(
     };
   }
 
-  // Accumulate per-category totals so we can expose a transparent breakdown.
-  // All signals in a category share the same weight, so a category's weighted
-  // sum is simply weight × (sum of its confidences).
-  const groups = new Map<SignalCategory, { weight: number; confSum: number; count: number }>();
-  let weightedSum = 0;
+  // Per-category accumulation, now polarity-aware. `signedSum` is the sum of
+  // (polarity × confidence) within the category (per unit weight); the
+  // category's net contribution to `base` is weight × signedSum / totalWeight.
+  const groups = new Map<
+    SignalCategory,
+    { weight: number; signedSum: number; confSum: number; count: number }
+  >();
+  let weightedSigned = 0;
   let totalWeight = 0;
 
   for (const signal of signals) {
     const weight = CATEGORY_WEIGHTS[signal.category] ?? 1.0;
-    weightedSum += signal.confidence * weight;
+    const polarity = signalPolarity(signal.category, signal.value);
+    weightedSigned += polarity * signal.confidence * weight;
     totalWeight += weight;
 
-    const g = groups.get(signal.category) ?? { weight, confSum: 0, count: 0 };
+    const g = groups.get(signal.category) ?? { weight, signedSum: 0, confSum: 0, count: 0 };
+    g.signedSum += polarity * signal.confidence;
     g.confSum += signal.confidence;
     g.count += 1;
     groups.set(signal.category, g);
   }
 
-  const base = weightedSum / totalWeight;
-  // Each additional source that corroborates adds up to 0.2 bonus confidence
-  const sourceBoost = Math.min(0.1 * (sourcesConsulted.length - 1), 0.2);
-  const confidence = Math.round(Math.min(base + sourceBoost, 1) * 100) / 100;
+  // Net friendliness before boost, clamped into [0, 1]. All-positive evidence
+  // reduces to the previous confidence-weighted average; negatives subtract.
+  const baseRaw = weightedSigned / totalWeight;
+  const base = clamp01(baseRaw);
+
+  // Corroborating sources add confidence — but only to an already-positive
+  // assessment; they should never lift a "not allowed" toward friendly.
+  const sourceBoost = base > 0 ? Math.min(0.1 * (sourcesConsulted.length - 1), 0.2) : 0;
+  const confidence = round2(clamp01(base + sourceBoost));
 
   const contributions: ScoreContribution[] = [...groups.entries()]
     .map(([category, g]) => ({
@@ -66,9 +105,10 @@ export function score(
       signalCount: g.count,
       weight: g.weight,
       averageConfidence: round2(g.confSum / g.count),
-      contribution: round2((g.weight * g.confSum) / weightedSum),
+      contribution: round2((g.weight * g.signedSum) / totalWeight),
+      polarity: Math.sign(g.signedSum),
     }))
-    .sort((a, b) => b.contribution - a.contribution);
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
 
   return {
     placeId,
