@@ -41,6 +41,9 @@ export interface CanonicalPlace {
   latitude: number;
   longitude: number;
   address?: string;
+  // The place's single main type (e.g. 'restaurant', 'bar', 'park'). More
+  // reliable for categorization than the unordered `types` array.
+  primaryType?: string;
   types: string[];
 }
 
@@ -96,6 +99,7 @@ interface RawPlace {
   displayName?: { text: string };
   location?: RawLatLng;
   formattedAddress?: string;
+  primaryType?: string;
   types?: string[];
   allowsDogs?: boolean;
 }
@@ -107,6 +111,7 @@ function toCanonical(p: RawPlace): CanonicalPlace {
     latitude: p.location?.latitude ?? 0,
     longitude: p.location?.longitude ?? 0,
     address: p.formattedAddress,
+    primaryType: p.primaryType,
     types: p.types ?? [],
   };
 }
@@ -176,7 +181,8 @@ export async function searchNearby(params: {
 }): Promise<CanonicalPlace[]> {
   const data = await googleFetch<{ places?: RawPlace[] }>('/places:searchNearby', {
     method: 'POST',
-    fieldMask: 'places.id,places.displayName,places.location,places.formattedAddress,places.types',
+    fieldMask:
+      'places.id,places.displayName,places.location,places.formattedAddress,places.primaryType,places.types',
     body: {
       includedTypes: params.includedTypes,
       maxResultCount: Math.min(params.maxResultCount ?? MAX_RESULTS, MAX_RESULTS),

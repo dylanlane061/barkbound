@@ -95,7 +95,7 @@ export async function catalogArea(
         canonicalSource: 'google',
         externalId: p.placeId,
         // Derive the display category from Google types so Discover filters work.
-        category: categoryFromTypes(p.types),
+        category: categoryFromTypes(p.types, p.primaryType),
         // Marks when this area was last catalogued — drives the recency gate
         // that decides whether a search re-catalogs.
         lastIngestedAt: now,
@@ -113,7 +113,7 @@ export async function catalogArea(
           longitude: p.longitude,
           address: p.address,
           canonicalSource: 'google',
-          category: categoryFromTypes(p.types),
+          category: categoryFromTypes(p.types, p.primaryType),
           lastIngestedAt: now,
         })
         .where(inArray(places.id, [existingByExternalId.get(p.placeId)!])),
