@@ -6,7 +6,12 @@ import { places, rawRecords, signals } from '@/db/schema';
 import { haversineMiles, radiusToBbox, type BoundingBox } from '@/ingest/geo';
 import { getPlaceDetails } from '@/ingest/google';
 import { fetchWebsiteText } from '@/lib/content/website';
+import { extractReviewClaims } from '@/lib/content/extract-llm';
 import { assessPlaces, type PlaceScore } from '@/lib/assess';
+
+// Mining Google reviews promotes the Details call to the pricier Enterprise SKU,
+// so it is opt-in: set PAWSIGNAL_GOOGLE_REVIEWS=1 to enable it.
+const REVIEWS_ENABLED = process.env.PAWSIGNAL_GOOGLE_REVIEWS === '1';
 
 // On-demand per-place assessment (ROADMAP Phase 1.5c). Collects real OSM
 // evidence near the place, conflates it, extracts signals via PawSignal, stores
@@ -69,7 +74,10 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
   await db
     .delete(rawRecords)
     .where(
-      and(eq(rawRecords.placeId, placeId), inArray(rawRecords.source, ['osm', 'google', 'website'])),
+      and(
+        eq(rawRecords.placeId, placeId),
+        inArray(rawRecords.source, ['osm', 'google', 'google_reviews', 'website']),
+      ),
     );
 
   let evidenceFound = 0;
@@ -146,7 +154,7 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
   if (place.externalId && place.canonicalSource === 'google') {
     let details: Awaited<ReturnType<typeof getPlaceDetails>> | null = null;
     try {
-      details = await getPlaceDetails(place.externalId);
+      details = await getPlaceDetails(place.externalId, { includeReviews: REVIEWS_ENABLED });
     } catch {
       // Missing/invalid place_id or API error — skip the Google-backed sources.
     }
@@ -212,6 +220,45 @@ export async function runAssessment(placeId: string): Promise<AssessResult> {
         }
       } catch {
         // Network/parse failure — skip the website signal, keep the assessment.
+      }
+    }
+
+    // (c) Google reviews: first-hand visitor experience (off by default — set
+    // PAWSIGNAL_GOOGLE_REVIEWS=1). Lower trust than policy (score() weights
+    // google_reviews at 0.8) but real ground truth the official sources miss.
+    // ToS-safe: reviews are a live read; we store only the extracted claim and
+    // its verbatim snippet as evidence, never Google's review payload.
+    if (REVIEWS_ENABLED && details && details.reviews.length > 0) {
+      try {
+        const claims = await extractReviewClaims(details.reviews.map((r) => r.text));
+        if (claims.length > 0) {
+          const [raw] = await db
+            .insert(rawRecords)
+            .values({
+              placeId,
+              source: 'google_reviews',
+              sourceEntityId: place.externalId,
+              raw: {
+                claims,
+                reviewCount: details.reviews.length,
+                note: 'Dog mentions mined from Google reviews (live read, not stored verbatim)',
+              },
+              fetchedAt: new Date(),
+            })
+            .returning({ id: rawRecords.id });
+          await db.insert(signals).values(
+            claims.map((c) => ({
+              placeId,
+              category: c.category,
+              value: c.value,
+              confidence: c.confidence,
+              evidenceIds: [raw.id],
+            })),
+          );
+          evidenceFound += claims.length;
+        }
+      } catch {
+        // Network/parse failure — skip review signals, keep the assessment.
       }
     }
   }

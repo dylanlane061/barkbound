@@ -1,16 +1,19 @@
-import { matchPetPolicy, type PolicyClaim } from '@pawsignal';
+import { type PolicyClaim } from '@pawsignal';
+import { extractPolicyClaims } from './extract-llm';
 
 // Website content collection (IO layer). Fetches a place's official site, follows
-// a couple of likely pet-policy subpages, strips to text, and runs PawSignal's
-// pure matcher over it. The interpretation lives in PawSignal; this module only
-// does the network + HTML cleanup. Best-effort and defensive — any failure
-// returns null so assessment continues without the website signal.
+// a couple of likely pet-policy subpages, strips to text, and extracts pet-policy
+// claims. Extraction runs through `extractPolicyClaims`: the Claude-backed
+// extractor when ANTHROPIC_API_KEY is set (richer, with a verbatim-quote check),
+// falling back to PawSignal's pure regex matcher otherwise. This module only does
+// the network + HTML cleanup. Best-effort and defensive — any failure returns
+// null so assessment continues without the website signal.
 
 const UA = 'Barkbound/0.1 (+https://barkbound.app; dog-travel-research)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BYTES = 800_000; // per page
 const MAX_SUBPAGES = 2;
-const MAX_TEXT = 60_000; // chars fed to the matcher
+const MAX_TEXT = 60_000; // chars fed to the extractor
 
 // Links worth following — pet policies usually live off the homepage.
 const SUBPAGE_HINT = /pet|dog|faq|polic|amenit|rule|accommodat|guest|stay|info/i;
@@ -122,7 +125,7 @@ export async function fetchWebsiteText(rawUrl: string): Promise<WebsiteDigest | 
   }
 
   const combined = pages.map((p) => p.text).join('\n').slice(0, MAX_TEXT);
-  const claims = matchPetPolicy(combined);
+  const claims = await extractPolicyClaims(combined);
 
   return {
     url: home.finalUrl,

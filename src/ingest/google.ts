@@ -47,11 +47,20 @@ export interface CanonicalPlace {
   types: string[];
 }
 
+// One Google review, trimmed to the fields we mine for dog mentions. Treated as
+// a live, refreshable read (like allowsDogs) — never persisted as a Google dataset.
+export interface PlaceReview {
+  text: string;
+  rating: number | null;
+}
+
 // Place Details adds the live, read-time dog signal (not persisted as evidence)
-// plus the place's official website (mined for an authoritative pet policy).
+// plus the place's official website (mined for an authoritative pet policy) and,
+// when requested, up to ~5 reviews (mined for first-hand dog mentions).
 export interface PlaceDetails extends CanonicalPlace {
   allowsDogs: boolean | null;
   websiteUri: string | null;
+  reviews: PlaceReview[];
 }
 
 function apiKey(): string {
@@ -96,6 +105,11 @@ interface RawLatLng {
   latitude: number;
   longitude: number;
 }
+interface RawReview {
+  text?: { text?: string; languageCode?: string };
+  originalText?: { text?: string };
+  rating?: number;
+}
 interface RawPlace {
   id: string;
   displayName?: { text: string };
@@ -105,6 +119,13 @@ interface RawPlace {
   types?: string[];
   allowsDogs?: boolean;
   websiteUri?: string;
+  reviews?: RawReview[];
+}
+
+function toReviews(raw: RawReview[] | undefined): PlaceReview[] {
+  return (raw ?? [])
+    .map((r) => ({ text: (r.text?.text ?? r.originalText?.text ?? '').trim(), rating: r.rating ?? null }))
+    .filter((r) => r.text.length > 0);
 }
 
 function toCanonical(p: RawPlace): CanonicalPlace {
@@ -201,16 +222,32 @@ export async function searchNearby(params: {
   return (data.places ?? []).map(toCanonical);
 }
 
-/** Hydrate a single place by id, including the live `allowsDogs` attribute. */
+/**
+ * Hydrate a single place by id, including the live `allowsDogs` attribute.
+ *
+ * `includeReviews` adds the `reviews` field — useful for mining first-hand dog
+ * mentions, but it promotes the call to the **Enterprise + Atmosphere** SKU
+ * (pricier; free up to ~1k/month). Leave it off unless the caller has opted in.
+ */
 export async function getPlaceDetails(
   placeId: string,
-  sessionToken?: string,
+  opts: { sessionToken?: string; includeReviews?: boolean } = {},
 ): Promise<PlaceDetails> {
-  const query = sessionToken ? `?sessionToken=${encodeURIComponent(sessionToken)}` : '';
+  const query = opts.sessionToken
+    ? `?sessionToken=${encodeURIComponent(opts.sessionToken)}`
+    : '';
+  const fields = ['id', 'displayName', 'location', 'formattedAddress', 'types', 'allowsDogs', 'websiteUri'];
+  if (opts.includeReviews) fields.push('reviews');
+
   const p = await googleFetch<RawPlace>(`/places/${encodeURIComponent(placeId)}${query}`, {
     method: 'GET',
-    fieldMask: 'id,displayName,location,formattedAddress,types,allowsDogs,websiteUri',
+    fieldMask: fields.join(','),
   });
 
-  return { ...toCanonical(p), allowsDogs: p.allowsDogs ?? null, websiteUri: p.websiteUri ?? null };
+  return {
+    ...toCanonical(p),
+    allowsDogs: p.allowsDogs ?? null,
+    websiteUri: p.websiteUri ?? null,
+    reviews: toReviews(p.reviews),
+  };
 }

@@ -10,7 +10,8 @@
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "eval:website": "tsx scripts/eval-website-extractor.ts"
   },
   "dependencies": {
     "@googlemaps/extended-component-library": "^0.6.14",
