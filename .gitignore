@@ -26,4 +26,4 @@ local.db-wal
 
 # os
 .DS_Store
-.claude/
+.claude/local.db-journal

@@ -1,24 +1,30 @@
+// Loading skeleton for Trip Detail (single column, ported from SkeletonTrip).
 export default function Loading() {
   return (
-    <main className="min-h-screen">
-      <div className="max-w-2xl mx-auto px-4 py-16 animate-pulse">
-        <div className="h-4 w-20 rounded bg-stone-200" />
-        <div className="mt-8 h-9 w-64 rounded bg-stone-200" />
-
-        <div className="mt-10 h-4 w-24 rounded bg-stone-200" />
-        <div className="mt-3 h-11 w-full rounded-lg border border-stone-200 bg-white" />
-
-        {Array.from({ length: 2 }).map((_, s) => (
-          <section key={s} className="mt-10">
-            <div className="h-5 w-40 rounded bg-stone-200" />
-            <ul className="mt-3 space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="h-12 rounded-lg border border-stone-200 bg-white" />
-              ))}
-            </ul>
-          </section>
+    <div>
+      <div style={{ borderBottom: '1px solid var(--line)', background: 'var(--green-tint-2)' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 28px 26px' }}>
+          <div className="sk" style={{ width: 200, height: 12, marginBottom: 16 }} />
+          <div className="sk" style={{ width: 360, height: 30, marginBottom: 12 }} />
+          <div className="sk" style={{ width: 420, height: 13 }} />
+        </div>
+      </div>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 28px 60px' }} className="col g20">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="row g16" style={{ alignItems: 'flex-start' }}>
+            <div className="sk" style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0 }} />
+            <div className="card grow" style={{ padding: 16 }}>
+              <div className="sk" style={{ width: 160, height: 20, marginBottom: 10 }} />
+              <div className="sk" style={{ width: 240, height: 12, marginBottom: 16 }} />
+              <div className="col g8">
+                {[0, 1, 2].map((j) => (
+                  <div key={j} className="sk" style={{ width: '100%', height: 66, borderRadius: 12 }} />
+                ))}
+              </div>
+            </div>
+          </div>
         ))}
       </div>
-    </main>
+    </div>
   );
 }

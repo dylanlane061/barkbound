@@ -10,12 +10,16 @@
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "eval:website": "tsx scripts/eval-website-extractor.ts"
   },
   "dependencies": {
     "@googlemaps/extended-component-library": "^0.6.14",
+    "@googlemaps/js-api-loader": "^2.1.0",
+    "@types/google.maps": "^3.65.0",
     "better-sqlite3": "^12.10.0",
     "drizzle-orm": "^0.30.10",
+    "geist": "^1.7.2",
     "next": "^14.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

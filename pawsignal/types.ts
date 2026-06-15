@@ -1,4 +1,11 @@
-export type SourceId = 'google' | 'osm' | 'recreation_gov' | 'nps' | 'user_import';
+export type SourceId =
+  | 'google'
+  | 'google_reviews'
+  | 'website'
+  | 'osm'
+  | 'recreation_gov'
+  | 'nps'
+  | 'user_import';
 
 export type SignalCategory =
   | 'pets_allowed'
@@ -29,6 +36,10 @@ export interface Signal {
   confidence: number;       // 0–1: how confident we are in this signal
   evidenceIds: string[];    // IDs of the RawRecords that support this signal
   extractedAt: Date;
+  // Which source produced this signal. Used by score() to weight by source
+  // authority (e.g. an official website outranks a crowd-sourced tag). Optional
+  // so legacy/synthetic signals without a known source fall back to neutral (1×).
+  source?: SourceId;
 }
 
 // How a single category contributed to the aggregate confidence. Exposed so the
@@ -38,7 +49,8 @@ export interface ScoreContribution {
   signalCount: number;
   weight: number;                // the category weight applied
   averageConfidence: number;     // mean signal confidence within the category (0–1)
-  contribution: number;          // share of the pre-boost weighted average (0–1)
+  contribution: number;          // signed share of `base` (can be negative)
+  polarity: number;              // net direction for this category: + friendly, − unfriendly
 }
 
 // A transparent breakdown of how `confidence` was derived.

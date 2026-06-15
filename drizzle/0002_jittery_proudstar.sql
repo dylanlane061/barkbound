@@ -1,0 +1,1 @@
+ALTER TABLE `trip_places` ADD `node_id` text REFERENCES trip_nodes(id) ON DELETE cascade;

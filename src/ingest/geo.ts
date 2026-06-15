@@ -5,6 +5,25 @@ export interface BoundingBox {
   maxLon: number;
 }
 
+const EARTH_RADIUS_MILES = 3958.8;
+
+/** Great-circle distance between two lat/lon points, in miles. */
+export function haversineMiles(
+  aLat: number,
+  aLon: number,
+  bLat: number,
+  bLon: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
+}
+
 export function radiusToBbox(lat: number, lon: number, radiusMiles: number): BoundingBox {
   const deltaLat = radiusMiles / 69.0;
   const deltaLon = radiusMiles / (Math.cos((lat * Math.PI) / 180) * 69.0);
